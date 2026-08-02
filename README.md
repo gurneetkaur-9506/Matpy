@@ -1,4 +1,4 @@
-# MAT2PY Translator
+# MATPY Translator
 
 An architecture for translating MATLAB code to Python. The system is built from five cooperating blocks.
 
