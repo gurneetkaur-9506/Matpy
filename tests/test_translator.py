@@ -41,5 +41,43 @@ class TestTranslateWithRulebook(unittest.TestCase):
         self.assertEqual(translations, expected)
 
 
+class TestPlotBuiltins(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        parser = Parser(Language(language()))
+        tree = parser.parse(
+            load_matlab_file("/sample_matlab/fft_basic.m").encode("utf-8")
+        )
+        cls.result = translate_with_rulebook(build_structure(tree))
+
+    def test_plot_calls_resolved(self):
+        translations = [s["python"] for s in self.result["statements"]]
+        self.assertIn("plt.plot(f, P1)", translations)
+        self.assertIn("plt.title('Single-Sided Amplitude Spectrum')", translations)
+        self.assertIn("plt.xlabel('Frequency (Hz)')", translations)
+        self.assertIn("plt.ylabel('Magnitude')", translations)
+
+    def test_no_unresolved(self):
+        translations = [s["python"] for s in self.result["statements"]]
+        self.assertNotIn(UNRESOLVED, translations)
+
+
+class TestLoopHandling(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        parser = Parser(Language(language()))
+        tree = parser.parse(
+            load_matlab_file("/sample_matlab/beamform_basic.m").encode("utf-8")
+        )
+        cls.result = translate_with_rulebook(build_structure(tree))
+
+    def test_loop_reported_unresolved(self):
+        statements = self.result["functions"][0]["statements"]
+        self.assertTrue(any(s["python"] == UNRESOLVED for s in statements))
+        loop = [s for s in statements if s["kind"] == "loop"]
+        self.assertEqual(len(loop), 1)
+        self.assertEqual(loop[0]["source"], "for n = 1:N")
+
+
 if __name__ == "__main__":
     unittest.main()

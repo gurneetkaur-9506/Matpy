@@ -38,8 +38,31 @@ class TestApplyBuiltinRule(unittest.TestCase):
     def test_nested_abs_fft(self):
         self.assertEqual(apply_builtin_rule("abs(fft(x))"), "np.abs(np.fft.fft(x))")
 
+    def test_sin(self):
+        self.assertEqual(apply_builtin_rule("sin(x)"), "np.sin(x)")
+        self.assertEqual(apply_builtin_rule("sin(2*pi*f*t)"), "np.sin(2*pi*f*t)")
+
+    def test_cos(self):
+        self.assertEqual(apply_builtin_rule("cos(x)"), "np.cos(x)")
+        self.assertEqual(apply_builtin_rule("cos(theta)"), "np.cos(theta)")
+
+    def test_tan(self):
+        self.assertEqual(apply_builtin_rule("tan(x)"), "np.tan(x)")
+        self.assertEqual(apply_builtin_rule("tan(phi, 1)"), "np.tan(phi, 1)")
+
+    def test_sqrt(self):
+        self.assertEqual(apply_builtin_rule("sqrt(x)"), "np.sqrt(x)")
+        self.assertEqual(apply_builtin_rule("sqrt(a + b)"), "np.sqrt(a + b)")
+
+    def test_exp(self):
+        self.assertEqual(apply_builtin_rule("exp(x)"), "np.exp(x)")
+        self.assertEqual(apply_builtin_rule("exp(-j*2*pi*f)"), "np.exp(-j*2*pi*f)")
+
+    def test_log(self):
+        self.assertEqual(apply_builtin_rule("log(x)"), "np.log(x)")
+        self.assertEqual(apply_builtin_rule("log(abs(Y))"), "np.log(np.abs(Y))")
+
     def test_unknown_call_passthrough(self):
-        self.assertEqual(apply_builtin_rule("sin(x)"), "sin(x)")
         self.assertEqual(apply_builtin_rule("myfunc(x)"), "myfunc(x)")
 
     def test_non_call_passthrough(self):

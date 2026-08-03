@@ -15,8 +15,18 @@ _COMMANDS = {
 }
 
 _OTHER_BUILTINS = {
-    "clc", "clear", "close", "cos", "exp", "figure", "log", "max", "mean",
-    "min", "plot", "sin", "sqrt", "sum", "tan", "title", "xlabel", "ylabel",
+    "clc", "clear", "close", "cos", "exp", "log", "max", "mean",
+    "min", "sin", "sqrt", "sum", "tan",
+}
+
+_PLOT_BUILTINS = {
+    "figure": "plt.figure",
+    "grid": "plt.grid",
+    "legend": "plt.legend",
+    "plot": "plt.plot",
+    "title": "plt.title",
+    "xlabel": "plt.xlabel",
+    "ylabel": "plt.ylabel",
 }
 
 
@@ -107,6 +117,11 @@ def _translate_expr(expr):
             return "print(%s)" % ", ".join(translated)
         if name in BUILTIN_RULES:
             return apply_builtin_rule(expr)
+        if name in _PLOT_BUILTINS:
+            translated = [_translate_expr(a) for a in _split_top_level(argtext, ",")]
+            if any(t == UNRESOLVED for t in translated):
+                return UNRESOLVED
+            return "%s(%s)" % (_PLOT_BUILTINS[name], ", ".join(translated))
         if name in _OTHER_BUILTINS:
             return UNRESOLVED
         args = _split_top_level(argtext, ",")
@@ -167,6 +182,12 @@ def _comment_for(stmt, python):
 
 
 def _translate_statement(stmt):
+    if not hasattr(stmt, "kind"):
+        return {
+            "kind": "loop",
+            "source": "%s %s" % (stmt.type, stmt.header),
+            "python": UNRESOLVED,
+        }
     if stmt.kind == "command":
         if stmt.text in _COMMANDS:
             return {
