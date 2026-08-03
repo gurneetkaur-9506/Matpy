@@ -134,6 +134,38 @@ def _translate_expr(expr):
     return UNRESOLVED
 
 
+def _note_for(stmt, python):
+    src = stmt.text
+    if stmt.kind == "command":
+        return "re-initialize state (no-op here)"
+    if stmt.kind == "assignment":
+        if python and "np.array([[" in python:
+            return "numpy array, ';' row separator -> list rows"
+        if python and "np." in python:
+            return "builtin mapped to numpy"
+        if "(" in src.split("=")[0]:
+            return "1-based index converted to 0-based"
+        return "assignment"
+    if stmt.kind == "function_call":
+        if python and python.startswith("print("):
+            arg = python[len("print("):-1].strip()
+            if arg.startswith("'"):
+                return "print string"
+            if " @ " in arg:
+                return "matrix multiplication '*' -> '@'"
+            if ".*" in src and " * " in arg:
+                return "element-wise multiplication '.*' -> '*'"
+            if "[" in arg:
+                return "1-based index converted to 0-based"
+            return "print call"
+        return "function call"
+    return "statement"
+
+
+def _comment_for(stmt, python):
+    return "# MATLAB: %s; -> Python: %s" % (stmt.text, _note_for(stmt, python))
+
+
 def _translate_statement(stmt):
     if stmt.kind == "command":
         if stmt.text in _COMMANDS:
@@ -141,6 +173,7 @@ def _translate_statement(stmt):
                 "kind": stmt.kind,
                 "source": stmt.text,
                 "python": _COMMANDS[stmt.text],
+                "comment": _comment_for(stmt, _COMMANDS[stmt.text]),
             }
         return {"kind": stmt.kind, "source": stmt.text, "python": UNRESOLVED}
 
@@ -152,14 +185,24 @@ def _translate_statement(stmt):
         if value_py == UNRESOLVED:
             return {"kind": stmt.kind, "source": stmt.text, "python": UNRESOLVED}
         target_py = apply_indexing_rule(target) if "(" in target else target
+        python = "%s = %s" % (target_py, value_py)
         return {
             "kind": stmt.kind,
             "source": stmt.text,
-            "python": "%s = %s" % (target_py, value_py),
+            "python": python,
+            "comment": _comment_for(stmt, python),
         }
 
     if stmt.kind == "function_call":
-        return {"kind": stmt.kind, "source": stmt.text, "python": _translate_expr(stmt.text)}
+        python = _translate_expr(stmt.text)
+        if python == UNRESOLVED:
+            return {"kind": stmt.kind, "source": stmt.text, "python": UNRESOLVED}
+        return {
+            "kind": stmt.kind,
+            "source": stmt.text,
+            "python": python,
+            "comment": _comment_for(stmt, python),
+        }
 
     return {"kind": stmt.kind, "source": stmt.text, "python": UNRESOLVED}
 
