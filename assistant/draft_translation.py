@@ -2,6 +2,9 @@ import json
 import re
 import urllib.request
 
+from reader import MATLAB_TO_PYTHON, PYTHON_TO_MATLAB
+from specialist_lib import collect_numpy_operations, reverse_lookup
+
 OLLAMA_ENDPOINT = "http://localhost:11434/api/generate"
 OLLAMA_MODEL = "llama3.2:1b"
 
@@ -15,6 +18,36 @@ Respond in EXACTLY this format and nothing else:
 
 CODE
 <python code, no markdown code fences>
+END CODE
+CONFIDENCE
+<one number from 0.0 to 1.0>
+END CONFIDENCE
+UNSURE
+<one line per item, each prefixed with "- ", listing EVERY point you are not
+fully certain about: assumptions, guesses, ambiguous MATLAB constructs,
+unknown shapes or semantics. If you are certain about everything, write "none".>
+END UNSURE
+
+Rules:
+- Never present uncertain behavior as certain. Every assumption or guess
+  MUST be listed in the UNSURE section.
+- Confidence MUST be 0.0 if there are any unresolved or guessed constructs.
+"""
+
+_SYSTEM_INSTRUCTION_REVERSE = """\
+You are an expert Python-to-MATLAB translator. Translate the given Python
+function into idiomatic MATLAB using the Phased Array Toolbox where
+appropriate.
+
+The reverse-lookup candidates below map numpy operations to the MATLAB
+Phased Array Toolbox functions they might correspond to. Several candidates
+may apply; pick the best fit from context and flag every ambiguous choice in
+the UNSURE section.
+
+Respond in EXACTLY this format and nothing else:
+
+CODE
+<matlab code, no markdown code fences>
 END CODE
 CONFIDENCE
 <one number from 0.0 to 1.0>
@@ -46,20 +79,47 @@ _UNCERTAINTY_HINTS = (
 )
 
 
-def _build_prompt(matlab_function_struct, specialist_lib_contents):
-    source = "\n".join(
+def _source_text(function_struct):
+    return "\n".join(
         s.get("source", "")
-        for s in matlab_function_struct.get("statements", [])
+        for s in function_struct.get("statements", [])
     )
-    spec = ""
-    if specialist_lib_contents:
-        spec = "\n\nAvailable specialist library:\n%s" % (
-            json.dumps(specialist_lib_contents, indent=2)
+
+
+def _reverse_lookup_context(function_struct):
+    source = _source_text(function_struct)
+    context = {}
+    for op in collect_numpy_operations(source):
+        context[op] = reverse_lookup(op)
+    return context
+
+
+def _build_prompt(function_struct, context, direction):
+    source = _source_text(function_struct)
+    instruction = (
+        _SYSTEM_INSTRUCTION_REVERSE
+        if direction == PYTHON_TO_MATLAB
+        else _SYSTEM_INSTRUCTION
+    )
+    source_label = (
+        "PYTHON function" if direction == PYTHON_TO_MATLAB else "MATLAB function"
+    )
+    context_block = ""
+    if context:
+        context_label = (
+            "reverse-lookup candidates"
+            if direction == PYTHON_TO_MATLAB
+            else "specialist library"
         )
-    return "%s\n\nMATLAB function:\n%s%s" % (
-        _SYSTEM_INSTRUCTION,
+        context_block = "\n\nAvailable %s:\n%s" % (
+            context_label,
+            json.dumps(context, indent=2),
+        )
+    return "%s\n\n%s:\n%s%s" % (
+        instruction,
+        source_label,
         source,
-        spec,
+        context_block,
     )
 
 
@@ -143,7 +203,9 @@ def parse_response(text):
     return {"code": code, "confidence": confidence, "notes": notes}
 
 
-def draft_translation(matlab_function_struct, specialist_lib_contents):
-    prompt = _build_prompt(matlab_function_struct, specialist_lib_contents)
+def draft_translation(function_struct, context, direction=MATLAB_TO_PYTHON):
+    if direction == PYTHON_TO_MATLAB:
+        context = _reverse_lookup_context(function_struct)
+    prompt = _build_prompt(function_struct, context, direction)
     response = _call_ollama(prompt)
     return parse_response(response)

@@ -1,0 +1,81 @@
+import ast
+import unittest
+
+from reader import PYTHON_TO_MATLAB, load_structure
+from reader.structure import Function, Statement, Structure
+from rulebook import UNRESOLVED, translate_with_rulebook_reverse
+
+
+class TestTranslateWithRulebookReverse(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.structure = load_structure(
+            "/workspace/sample_python/indexing_ops_py.py", PYTHON_TO_MATLAB
+        )
+        cls.result = translate_with_rulebook_reverse(cls.structure)
+
+    def _translations(self):
+        return [s["matlab"] for s in self.result["statements"]]
+
+    def test_fully_resolved(self):
+        translations = self._translations()
+        self.assertNotIn(UNRESOLVED, translations)
+
+    def test_expected_lines(self):
+        translations = [t for t in self._translations() if t]
+        expected = [
+            "A = [1 2 3; 4 5 6]",
+            "B = [7 8; 9 10; 11 12]",
+            "disp('A(1,1) (first row, first col):')",
+            "disp(A(1, 1))",
+            "disp('A(2,3) (second row, third col):')",
+            "disp(A(2, 3))",
+            "disp('Matrix multiplication A * B:')",
+            "disp(A * B)",
+            "disp('Element-wise multiplication A .* A:')",
+            "disp(A .* A)",
+            "disp('First row of A via 1-based indexing:')",
+            "disp(A(1, :))",
+        ]
+        self.assertEqual(translations, expected)
+
+    def test_import_becomes_noop(self):
+        import_stmt = self.result["statements"][0]
+        self.assertEqual(import_stmt["kind"], "Import")
+        self.assertEqual(import_stmt["matlab"], "")
+
+    def test_comments_present(self):
+        for s in self.result["statements"]:
+            self.assertIn("comment", s)
+            self.assertTrue(s["comment"].startswith("% Python:"))
+
+    def test_loop_reported_unresolved(self):
+        structure = Structure(statements=[Statement("For", "for i in range(3):")])
+        result = translate_with_rulebook_reverse(structure)
+        self.assertEqual(result["statements"][0]["matlab"], UNRESOLVED)
+
+    def test_unknown_call_reported_unresolved(self):
+        structure = Structure(statements=[Statement("Expr", "np.mean(x)")])
+        result = translate_with_rulebook_reverse(structure)
+        self.assertEqual(result["statements"][0]["matlab"], UNRESOLVED)
+
+    def test_builtin_reverse_in_expr(self):
+        structure = Structure(
+            statements=[
+                Statement("Expr", "print(np.abs(np.fft.fft(x)))"),
+                Statement("Assign", "y = np.zeros((2, 5))"),
+            ]
+        )
+        result = translate_with_rulebook_reverse(structure)
+        matlab = [s["matlab"] for s in result["statements"]]
+        self.assertEqual(matlab, ["disp(abs(fft(x)))", "y = zeros(2, 5)"])
+
+    def test_functions_handled(self):
+        structure = Structure(functions=[Function("f", [Statement("Expr", "print(x)")])])
+        result = translate_with_rulebook_reverse(structure)
+        statements = result["functions"][0]["statements"]
+        self.assertEqual(statements[0]["matlab"], "disp(x)")
+
+
+if __name__ == "__main__":
+    unittest.main()

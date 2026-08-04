@@ -43,6 +43,56 @@ def _size_dim(dim):
     return "(%s - 1)" % dim
 
 
+# Reverse mapping derived from the forward rules: every built-in whose
+# python target is a plain 'np.<name>' call can be mirrored back to its
+# MATLAB name. The 'size' rule (-> '.shape') and attribute access are not
+# calls and are excluded.
+_REVERSE_BUILTIN_MAP = {
+    rule["python"]: name
+    for name, rule in BUILTIN_RULES.items()
+    if rule["python"].startswith("np.")
+}
+
+
+def _expand_tuple_arg(arg):
+    arg = arg.strip()
+    if arg.startswith("(") and arg.endswith(")"):
+        return [a.strip() for a in _split_args(arg[1:-1]) if a.strip()]
+    return [arg]
+
+
+def apply_builtin_rule_reverse(call):
+    call = call.strip()
+    match = re.fullmatch(r"([A-Za-z_][A-Za-z0-9_.]*)\s*\((.*)\)", call)
+    if not match:
+        return call
+    name = match.group(1)
+    if name not in _REVERSE_BUILTIN_MAP:
+        return call
+
+    inner = match.group(2).strip()
+    args = _split_args(inner) if inner else []
+    args = [apply_builtin_rule_reverse(a) for a in args]
+
+    matlab_name = _REVERSE_BUILTIN_MAP[name]
+    rule = BUILTIN_RULES[matlab_name]
+
+    if rule["arg_mode"] == "tuple_dims":
+        if matlab_name == "reshape":
+            if not args:
+                return "%s()" % matlab_name
+            flat = [args[0]]
+            for a in args[1:]:
+                flat.extend(_expand_tuple_arg(a))
+            return "%s(%s)" % (matlab_name, ", ".join(flat))
+        flat = []
+        for a in args:
+            flat.extend(_expand_tuple_arg(a))
+        return "%s(%s)" % (matlab_name, ", ".join(flat))
+
+    return "%s(%s)" % (matlab_name, ", ".join(args))
+
+
 def apply_builtin_rule(call):
     call = call.strip()
     match = re.fullmatch(r"([A-Za-z_][A-Za-z0-9_]*)\s*\((.*)\)", call)

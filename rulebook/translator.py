@@ -1,9 +1,9 @@
 import re
 
-from .builtin_rules import BUILTIN_RULES, apply_builtin_rule
+from .builtin_rules import BUILTIN_RULES, apply_builtin_rule, apply_builtin_rule_reverse
 from .complex_rules import apply_complex_rule
-from .indexing_rules import apply_indexing_rule
-from .operator_rules import _find_last_operator
+from .indexing_rules import apply_indexing_rule, apply_indexing_rule_reverse
+from .operator_rules import _find_last_operator, apply_operator_rule_reverse
 
 UNRESOLVED = "UNRESOLVED"
 
@@ -239,4 +239,162 @@ def translate_with_rulebook(structure):
         )
     for stmt in structure.statements:
         result["statements"].append(_translate_statement(stmt))
+    return result
+
+
+def _translate_matrix_reverse(inner):
+    inner = inner.strip()
+    if not (inner.startswith("[") and inner.endswith("]")):
+        return None
+    body = inner[1:-1].strip()
+    if not body:
+        return "[]"
+    elems = [e.strip() for e in _split_top_level(body, ",")]
+    if not elems:
+        return None
+    if all(e.startswith("[") and e.endswith("]") for e in elems):
+        rows = []
+        for e in elems:
+            cells = [c.strip() for c in _split_top_level(e[1:-1], ",")]
+            rows.append(" ".join(cells))
+        return "[%s]" % "; ".join(rows)
+    return "[%s]" % " ".join(elems)
+
+
+def _translate_expr_reverse(expr):
+    expr = expr.strip()
+    if not expr:
+        return ""
+    if len(expr) >= 2 and expr[0] == expr[-1] == "'":
+        return expr
+
+    match = re.fullmatch(r"np\.array\((.*)\)", expr, re.DOTALL)
+    if match:
+        matrix = _translate_matrix_reverse(match.group(1))
+        return matrix if matrix is not None else UNRESOLVED
+
+    call = _split_call(expr)
+    if call is not None:
+        name, argtext = call
+        if name == "print":
+            translated = [
+                _translate_expr_reverse(a) for a in _split_top_level(argtext, ",")
+            ]
+            if any(t == UNRESOLVED for t in translated):
+                return UNRESOLVED
+            return "disp(%s)" % ", ".join(translated)
+        args = _split_top_level(argtext, ",")
+        if args and all(_is_index_like(a) for a in args):
+            reversed_call = apply_indexing_rule_reverse(expr)
+            if reversed_call != expr:
+                return reversed_call
+        return UNRESOLVED
+
+    dotted = re.fullmatch(
+        r"[A-Za-z_][A-Za-z0-9_]*\.[A-Za-z_][A-Za-z0-9_.]*\s*\(.*\)", expr
+    )
+    if dotted:
+        reversed_call = apply_builtin_rule_reverse(expr)
+        if reversed_call != expr:
+            return reversed_call
+        return UNRESOLVED
+
+    if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*\s*\[.*\]", expr):
+        return apply_indexing_rule_reverse(expr)
+
+    reversed_expr = apply_operator_rule_reverse(expr)
+    if reversed_expr != expr:
+        return reversed_expr
+
+    return expr
+
+
+def _note_for_reverse(stmt, matlab):
+    src = stmt.text
+    if stmt.kind == "Import":
+        return "no import; arrays built with [ ] brackets"
+    if stmt.kind == "Assign":
+        if "np.array([[" in src:
+            return "nested lists -> rows separated by ';'"
+        if "np." in src:
+            return "numpy builtin mapped back to MATLAB"
+        if "[" in src.split("=")[0]:
+            return "0-based index converted to 1-based"
+        return "assignment"
+    if stmt.kind == "Expr":
+        if matlab.startswith("disp("):
+            arg = matlab[len("disp("):-1].strip()
+            if arg.startswith("'"):
+                return "print string"
+            if " @ " in src:
+                return "'@' is matrix multiplication -> '*'"
+            if " * " in src:
+                return "'*' element-wise in numpy -> '.*' in MATLAB"
+            if "[" in arg:
+                return "0-based index converted to 1-based"
+            return "print call"
+        return "expression"
+    return "statement"
+
+
+def _comment_for_reverse(stmt, matlab):
+    return "%% Python: %s -> MATLAB: %s" % (stmt.text, _note_for_reverse(stmt, matlab))
+
+
+def _translate_statement_reverse(stmt):
+    if not hasattr(stmt, "kind"):
+        return {
+            "kind": "loop",
+            "source": "%s %s" % (stmt.type, stmt.header),
+            "matlab": UNRESOLVED,
+        }
+    if stmt.kind in ("Import", "ImportFrom"):
+        matlab = ""
+        return {
+            "kind": stmt.kind,
+            "source": stmt.text,
+            "matlab": matlab,
+            "comment": _comment_for_reverse(stmt, matlab),
+        }
+    if stmt.kind == "Assign":
+        target, value = _split_assignment(stmt.text)
+        if value is None:
+            return {"kind": stmt.kind, "source": stmt.text, "matlab": UNRESOLVED}
+        value_matlab = _translate_expr_reverse(value)
+        if value_matlab == UNRESOLVED:
+            return {"kind": stmt.kind, "source": stmt.text, "matlab": UNRESOLVED}
+        target_matlab = apply_indexing_rule_reverse(target) if "[" in target else target
+        matlab = "%s = %s" % (target_matlab, value_matlab)
+        return {
+            "kind": stmt.kind,
+            "source": stmt.text,
+            "matlab": matlab,
+            "comment": _comment_for_reverse(stmt, matlab),
+        }
+    if stmt.kind == "Expr":
+        matlab = _translate_expr_reverse(stmt.text)
+        if matlab == UNRESOLVED:
+            return {"kind": stmt.kind, "source": stmt.text, "matlab": UNRESOLVED}
+        return {
+            "kind": stmt.kind,
+            "source": stmt.text,
+            "matlab": matlab,
+            "comment": _comment_for_reverse(stmt, matlab),
+        }
+    return {"kind": stmt.kind, "source": stmt.text, "matlab": UNRESOLVED}
+
+
+def translate_with_rulebook_reverse(structure):
+    result = {"functions": [], "statements": []}
+    for func in structure.functions:
+        result["functions"].append(
+            {
+                "name": func.name,
+                "statements": [
+                    _translate_statement_reverse(s) for s in func.statements
+                ],
+            }
+        )
+    for stmt in structure.statements:
+        result["statements"].append(_translate_statement_reverse(stmt))
     return result
