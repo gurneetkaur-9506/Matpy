@@ -40,6 +40,11 @@ def _bind_args(func, inputs):
     kwargs = {}
     missing = []
     for pname, param in signature.parameters.items():
+        if param.kind in (
+            inspect.Parameter.VAR_POSITIONAL,
+            inspect.Parameter.VAR_KEYWORD,
+        ):
+            continue
         if pname in inputs:
             kwargs[pname] = inputs[pname]
         elif param.default is inspect.Parameter.empty:
