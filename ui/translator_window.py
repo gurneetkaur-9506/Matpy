@@ -2,6 +2,7 @@ import sys
 
 from PyQt5.QtWidgets import (
     QApplication,
+    QComboBox,
     QHBoxLayout,
     QLabel,
     QMainWindow,
@@ -12,8 +13,13 @@ from PyQt5.QtWidgets import (
     QWidget,
 )
 
-from reader import load_matlab_file
+from reader import MATLAB_TO_PYTHON, PYTHON_TO_MATLAB, load_matlab_file
 from translator import translate_file
+
+_DIRECTION_ITEMS = (
+    ("MATLAB -> Python", MATLAB_TO_PYTHON),
+    ("Python -> MATLAB", PYTHON_TO_MATLAB),
+)
 
 _MARKER_STYLE = {
     "verified": (
@@ -54,6 +60,8 @@ class TranslatorWindow(QMainWindow):
 
         self.matlab_pane = QPlainTextEdit()
         self.matlab_pane.setReadOnly(True)
+        self.source_label = QLabel("Source: MATLAB")
+        self.output_label = QLabel("Output: Python")
         self.python_pane = QPlainTextEdit()
         self.python_pane.setReadOnly(True)
 
@@ -65,9 +73,21 @@ class TranslatorWindow(QMainWindow):
         self.translate_button = QPushButton("Translate")
         self.translate_button.clicked.connect(self._translate)
 
+        self.direction_combo = QComboBox()
+        for label, direction in _DIRECTION_ITEMS:
+            self.direction_combo.addItem(label, direction)
+        self.direction_combo.currentIndexChanged.connect(self._on_direction_changed)
+
         buttons = QHBoxLayout()
+        buttons.addWidget(QLabel("Direction:"))
+        buttons.addWidget(self.direction_combo)
         buttons.addStretch(1)
         buttons.addWidget(self.translate_button)
+
+        pane_labels = QHBoxLayout()
+        pane_labels.addWidget(self.source_label)
+        pane_labels.addStretch(1)
+        pane_labels.addWidget(self.output_label)
 
         self.section_labels = {}
         sections_row = QHBoxLayout()
@@ -83,6 +103,7 @@ class TranslatorWindow(QMainWindow):
         layout = QVBoxLayout()
         layout.addLayout(buttons)
         layout.addLayout(sections_row)
+        layout.addLayout(pane_labels)
         layout.addWidget(splitter)
         central.setLayout(layout)
         self.setCentralWidget(central)
@@ -95,6 +116,15 @@ class TranslatorWindow(QMainWindow):
         self.matlab_path = path
         self.matlab_pane.setPlainText(load_matlab_file(path))
         self.statusBar().showMessage("Loaded %s" % path)
+
+    def current_direction(self):
+        return self.direction_combo.currentData()
+
+    def _on_direction_changed(self, *_):
+        reverse = self.current_direction() == PYTHON_TO_MATLAB
+        self.source_label.setText("Source: Python" if reverse else "Source: MATLAB")
+        self.output_label.setText("Output: MATLAB" if reverse else "Output: Python")
+        self.python_pane.setPlainText("")
 
     def _set_section_marker(self, stage, status):
         label = self.section_labels[stage]
@@ -110,7 +140,7 @@ class TranslatorWindow(QMainWindow):
             self.statusBar().showMessage("No MATLAB file loaded")
             return
         try:
-            result = translate_file(self.matlab_path)
+            result = translate_file(self.matlab_path, direction=self.current_direction())
         except Exception as exc:
             self.statusBar().showMessage("Translation failed: %s" % exc)
             self._set_section_marker("checker", "failed")
