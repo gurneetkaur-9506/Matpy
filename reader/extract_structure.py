@@ -1,3 +1,5 @@
+import ast
+
 _BUILTINS = {
     "abs", "acos", "asin", "atan", "axis", "clc", "clear", "close", "cos",
     "disp", "end", "exp", "fft", "figure", "fprintf", "grid", "hold", "ifft",
@@ -96,7 +98,93 @@ def _collect_refs(node, refs):
         _collect_refs(c, refs)
 
 
+def _py_loop_from_node(node):
+    if isinstance(node, ast.For):
+        loop_type = "for"
+        header = "for %s in %s" % (ast.unparse(node.target), ast.unparse(node.iter))
+    else:
+        loop_type = "while"
+        header = "while %s" % ast.unparse(node.test)
+    body = "\n".join(ast.unparse(s) for s in node.body)
+    return {"type": loop_type, "header": header, "body": body}
+
+
+def _py_collect_loops(node, loops):
+    if isinstance(node, (ast.For, ast.While)):
+        loops.append(_py_loop_from_node(node))
+        return
+    for child in ast.iter_child_nodes(node):
+        if isinstance(child, ast.FunctionDef):
+            continue
+        _py_collect_loops(child, loops)
+
+
+def _py_slice_index(slice_node):
+    if isinstance(slice_node, ast.Slice):
+        parts = []
+        for field in ("lower", "upper", "step"):
+            value = getattr(slice_node, field, None)
+            if value is not None:
+                parts.append(ast.unparse(value))
+        if not parts:
+            return ":"
+        return ":".join(parts)
+    return ast.unparse(slice_node)
+
+
+def _py_index_ref(subscript):
+    if not isinstance(subscript.value, ast.Name):
+        return None
+    slice_node = subscript.slice
+    if isinstance(slice_node, ast.Tuple):
+        indices = [_py_slice_index(elt) for elt in slice_node.elts]
+    else:
+        indices = [_py_slice_index(slice_node)]
+    return {"kind": "index", "name": subscript.value.id, "indices": indices}
+
+
+def _py_collect_refs(node, refs):
+    if isinstance(node, ast.Name):
+        if isinstance(node.ctx, ast.Load):
+            refs.append({"kind": "plain", "name": node.id})
+        return
+    if isinstance(node, ast.Subscript):
+        ref = _py_index_ref(node)
+        if ref is not None:
+            refs.append(ref)
+        return
+    if isinstance(node, ast.FunctionDef):
+        return
+    for child in ast.iter_child_nodes(node):
+        _py_collect_refs(child, refs)
+
+
+def _extract_python(tree):
+    functions = []
+    refs = []
+    for child in tree.body:
+        if isinstance(child, ast.FunctionDef):
+            loops = []
+            _py_collect_loops(child, loops)
+            function_refs = []
+            for stmt in child.body:
+                _py_collect_refs(stmt, function_refs)
+            functions.append(
+                {
+                    "name": child.name,
+                    "body": "\n".join(ast.unparse(s) for s in child.body),
+                    "loops": loops,
+                    "refs": function_refs,
+                }
+            )
+        else:
+            _py_collect_refs(child, refs)
+    return {"functions": functions, "refs": refs}
+
+
 def extract_structure(parse_tree):
+    if isinstance(parse_tree, ast.AST):
+        return _extract_python(parse_tree)
     root = getattr(parse_tree, "root_node", parse_tree)
     functions = []
     refs = []

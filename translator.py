@@ -4,18 +4,13 @@ import inspect
 import os
 import tempfile
 
-from tree_sitter import Language, Parser
-from tree_sitter_matlab import language
-
 from assistant import draft_unresolved_functions
 from checker import verify
-from reader import build_structure, load_matlab_file
+from reader import MATLAB_TO_PYTHON, load_structure
 from rulebook import UNRESOLVED, translate_with_rulebook
 from specialist_lib import __all__ as SPECIALIST_NAMES
 
 import specialist_lib
-
-_parser = Parser(Language(language()))
 
 
 def _specialist_lib_contents():
@@ -26,8 +21,7 @@ def _specialist_lib_contents():
 
 
 def _parse(path):
-    tree = _parser.parse(load_matlab_file(path).encode("utf-8"))
-    return build_structure(tree)
+    return load_structure(path, MATLAB_TO_PYTHON)
 
 
 def _emit_block(statements, lines, indent=""):

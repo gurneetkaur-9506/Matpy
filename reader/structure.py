@@ -1,6 +1,7 @@
+import ast
 from dataclasses import asdict, dataclass, field
 
-from .extract_structure import _collect_refs, _loop_from_node
+from .extract_structure import _collect_refs, _loop_from_node, _py_collect_refs
 
 
 @dataclass
@@ -83,7 +84,58 @@ def _flatten_loops(statements):
     return loops
 
 
+def _py_loop_header(node):
+    if isinstance(node, ast.For):
+        return "for %s in %s" % (ast.unparse(node.target), ast.unparse(node.iter))
+    return "while %s" % ast.unparse(node.test)
+
+
+def _py_statements_from_body(body):
+    statements = []
+    for child in body:
+        if isinstance(child, (ast.For, ast.While)):
+            loop_type = "for" if isinstance(child, ast.For) else "while"
+            inner = _py_statements_from_body(child.body)
+            statements.append(Loop(loop_type, _py_loop_header(child), inner))
+        else:
+            statements.append(Statement(child.__class__.__name__, ast.unparse(child)))
+    return statements
+
+
+def _py_collect_for(node):
+    entries = []
+    for stmt in node.body:
+        _py_collect_refs(stmt, entries)
+    return _split_refs(entries)
+
+
+def _build_python_structure(tree):
+    structure = Structure()
+
+    for child in tree.body:
+        if isinstance(child, ast.FunctionDef):
+            statements = _py_statements_from_body(child.body)
+            plains, indices = _py_collect_for(child)
+            structure.functions.append(
+                Function(child.name, statements, _flatten_loops(statements), plains, indices)
+            )
+        else:
+            structure.statements.append(
+                Statement(child.__class__.__name__, ast.unparse(child))
+            )
+
+    top_entries = []
+    for child in tree.body:
+        if not isinstance(child, ast.FunctionDef):
+            _py_collect_refs(child, top_entries)
+    structure.refs, structure.indices = _split_refs(top_entries)
+    structure.loops = _flatten_loops(structure.statements)
+    return structure
+
+
 def build_structure(parse_tree):
+    if isinstance(parse_tree, ast.AST):
+        return _build_python_structure(parse_tree)
     root = getattr(parse_tree, "root_node", parse_tree)
     structure = Structure()
 
