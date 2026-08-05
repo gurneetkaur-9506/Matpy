@@ -17,6 +17,7 @@ from rulebook import (
     translate_with_rulebook,
     translate_with_rulebook_reverse,
 )
+from tests.paths import sample_matlab, sample_python
 
 FAKE_RESPONSE = """CODE
 import numpy as np
@@ -156,7 +157,7 @@ class TestDraftTranslationDirection(unittest.TestCase):
 class TestDraftTranslationReverse(unittest.TestCase):
     def _beamform_basic_func(self):
         structure = load_structure(
-            "/workspace/sample_python/beamform_basic_py.py", PYTHON_TO_MATLAB
+            sample_python("beamform_basic_py.py"), PYTHON_TO_MATLAB
         )
         result = translate_with_rulebook_reverse(structure)
         self.assertEqual(result["functions"][0]["name"], "beamform_basic")
@@ -220,7 +221,7 @@ class TestDraftRouting(unittest.TestCase):
     def test_beamform_basic_routed(self, mock_call):
         parser = Parser(Language(language()))
         tree = parser.parse(
-            load_matlab_file("/sample_matlab/beamform_basic.m").encode("utf-8")
+            load_matlab_file(sample_matlab("beamform_basic.m")).encode("utf-8")
         )
         result = translate_with_rulebook(build_structure(tree))
         routed = draft_unresolved_functions(result, {"libs": []})

@@ -14,4 +14,6 @@ def parse_and_print_tree(path):
 
 
 if __name__ == "__main__":
-    parse_and_print_tree("/sample_matlab/fft_basic.m")
+    from repo_paths import sample_matlab
+
+    parse_and_print_tree(sample_matlab("fft_basic.m"))

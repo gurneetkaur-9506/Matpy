@@ -6,6 +6,7 @@ from unittest import mock
 import numpy as np
 
 from checker import verify
+from tests.paths import reference_set, sample_matlab
 
 
 class TestVerify(unittest.TestCase):
@@ -22,8 +23,8 @@ class TestVerify(unittest.TestCase):
 
     def test_indexing_ops_script_not_verifiable(self):
         verdict = verify(
-            "/sample_matlab/indexing_ops.m",
-            "reference_set/indexing_ops.py",
+            sample_matlab("indexing_ops.m"),
+            reference_set("indexing_ops.py"),
             {},
         )
         self.assertEqual(verdict, "review needed")

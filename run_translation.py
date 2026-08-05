@@ -1,8 +1,9 @@
 import sys
 
+from repo_paths import sample_matlab
 from translator import translate_file
 
-MATLAB_FILE = "/sample_matlab/indexing_ops.m"
+MATLAB_FILE = sample_matlab("indexing_ops.m")
 
 
 def main():

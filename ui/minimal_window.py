@@ -14,10 +14,11 @@ from PyQt5.QtWidgets import (
     QWidget,
 )
 
+from repo_paths import sample_matlab
 from reader import MATLAB_TO_PYTHON, PYTHON_TO_MATLAB
 from translator import translate_file
 
-DEFAULT_MATLAB_PATH = "/sample_matlab/fft_basic.m"
+DEFAULT_MATLAB_PATH = sample_matlab("fft_basic.m")
 
 _DIRECTION_ITEMS = (
     ("MATLAB -> Python", MATLAB_TO_PYTHON),

@@ -4,6 +4,7 @@ from unittest import mock
 import numpy as np
 
 from reader import PYTHON_TO_MATLAB
+from tests.paths import sample_matlab, sample_python
 from translator import translate_file
 
 FAKE_RESPONSE = """CODE
@@ -20,13 +21,13 @@ UNSURE
 END UNSURE
 """
 
-FFT_MATLAB = "/workspace/sample_matlab/fft_basic.m"
-INDEXING_PYTHON = "/workspace/sample_python/indexing_ops_py.py"
+FFT_MATLAB = sample_matlab("fft_basic.m")
+INDEXING_PYTHON = sample_python("indexing_ops_py.py")
 
 
 class TestTranslateFile(unittest.TestCase):
     def test_indexing_ops_sections(self):
-        result = translate_file("/sample_matlab/indexing_ops.m")
+        result = translate_file(sample_matlab("indexing_ops.m"))
         self.assertEqual(result["status"], "ok")
         self.assertEqual(result["sections"]["reader"]["status"], "ok")
         self.assertEqual(result["sections"]["rulebook"]["status"], "ok")
@@ -37,7 +38,7 @@ class TestTranslateFile(unittest.TestCase):
 
     @mock.patch("assistant.draft_translation._call_ollama", return_value=FAKE_RESPONSE)
     def test_beamform_sections(self, mock_call):
-        result = translate_file("/sample_matlab/beamform_basic.m")
+        result = translate_file(sample_matlab("beamform_basic.m"))
         self.assertEqual(result["status"], "unresolved")
         self.assertEqual(result["sections"]["reader"]["status"], "ok")
         self.assertEqual(result["sections"]["reader"]["functions"], ["beamform_basic"])
@@ -55,7 +56,7 @@ class TestTranslateFile(unittest.TestCase):
     @mock.patch("assistant.draft_translation._call_ollama", return_value=FAKE_RESPONSE)
     def test_checker_runs_when_inputs_provided(self, mock_call):
         result = translate_file(
-            "/sample_matlab/beamform_basic.m",
+            sample_matlab("beamform_basic.m"),
             inputs={
                 "N": 3,
                 "d": 0.5,
@@ -92,7 +93,7 @@ class TestTranslateFile(unittest.TestCase):
     @mock.patch("assistant.draft_translation._call_ollama", return_value=FAKE_RESPONSE)
     def test_reverse_outputs_matlab_from_beamform(self, mock_call):
         result = translate_file(
-            "/workspace/sample_python/beamform_basic_py.py",
+            sample_python("beamform_basic_py.py"),
             direction=PYTHON_TO_MATLAB,
         )
         self.assertEqual(result["status"], "unresolved")

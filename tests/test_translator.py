@@ -5,13 +5,16 @@ from tree_sitter_matlab import language
 
 from reader import build_structure, load_matlab_file
 from rulebook import UNRESOLVED, translate_with_rulebook
+from tests.paths import sample_matlab
 
 
 class TestTranslateWithRulebook(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         parser = Parser(Language(language()))
-        tree = parser.parse(load_matlab_file("/sample_matlab/indexing_ops.m").encode("utf-8"))
+        tree = parser.parse(
+            load_matlab_file(sample_matlab("indexing_ops.m")).encode("utf-8")
+        )
         cls.structure = build_structure(tree)
 
     def _translations(self):
@@ -46,7 +49,7 @@ class TestPlotBuiltins(unittest.TestCase):
     def setUpClass(cls):
         parser = Parser(Language(language()))
         tree = parser.parse(
-            load_matlab_file("/sample_matlab/fft_basic.m").encode("utf-8")
+            load_matlab_file(sample_matlab("fft_basic.m")).encode("utf-8")
         )
         cls.result = translate_with_rulebook(build_structure(tree))
 
@@ -67,7 +70,7 @@ class TestLoopHandling(unittest.TestCase):
     def setUpClass(cls):
         parser = Parser(Language(language()))
         tree = parser.parse(
-            load_matlab_file("/sample_matlab/beamform_basic.m").encode("utf-8")
+            load_matlab_file(sample_matlab("beamform_basic.m")).encode("utf-8")
         )
         cls.result = translate_with_rulebook(build_structure(tree))
 

@@ -5,6 +5,7 @@ import unittest
 import numpy as np
 
 from checker import run_matlab_mock
+from tests.paths import sample_matlab
 
 
 class TestRunMatlabMock(unittest.TestCase):
@@ -63,7 +64,7 @@ class TestRunMatlabMock(unittest.TestCase):
 
     def test_beamform_basic_structured_output(self):
         result = run_matlab_mock(
-            "/sample_matlab/beamform_basic.m",
+            sample_matlab("beamform_basic.m"),
             {"N": 8, "d": 0.5, "lambda": 1.0, "theta": np.linspace(0, np.pi, 91), "theta0": 0.0},
         )
         self.assertEqual(result["function"], "beamform_basic")

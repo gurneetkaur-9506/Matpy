@@ -3,13 +3,14 @@ from pprint import pprint
 from tree_sitter import Language, Parser
 from tree_sitter_matlab import language
 
+from repo_paths import sample_matlab
 from reader import build_structure, load_matlab_file, structure_to_dict
 
 SAMPLES = [
-    "/sample_matlab/fft_basic.m",
-    "/sample_matlab/indexing_ops.m",
-    "/sample_matlab/beamform_basic.m",
-    "/sample_matlab/builtins_demo.m",
+    sample_matlab("fft_basic.m"),
+    sample_matlab("indexing_ops.m"),
+    sample_matlab("beamform_basic.m"),
+    sample_matlab("builtins_demo.m"),
 ]
 
 

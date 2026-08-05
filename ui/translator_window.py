@@ -13,6 +13,7 @@ from PyQt5.QtWidgets import (
     QWidget,
 )
 
+from repo_paths import sample_matlab
 from reader import MATLAB_TO_PYTHON, PYTHON_TO_MATLAB, load_matlab_file
 from translator import translate_file
 
@@ -153,7 +154,7 @@ class TranslatorWindow(QMainWindow):
 
 
 def main():
-    path = sys.argv[1] if len(sys.argv) > 1 else "/sample_matlab/fft_basic.m"
+    path = sys.argv[1] if len(sys.argv) > 1 else sample_matlab("fft_basic.m")
     app = QApplication(sys.argv)
     window = TranslatorWindow(matlab_path=path)
     window.show()

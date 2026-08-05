@@ -1,18 +1,15 @@
 import ast
-import os
 import unittest
 
 from tree_sitter import Language, Parser
 from tree_sitter_matlab import language
 
 from reader import extract_structure, load_matlab_file
-
-SAMPLE_DIR = "/sample_python"
-MATLAB_DIR = "/sample_matlab"
+from tests.paths import sample_matlab, sample_python
 
 
 def _parse_py(name):
-    with open(os.path.join(SAMPLE_DIR, name), "r", encoding="utf-8") as f:
+    with open(sample_python(name), "r", encoding="utf-8") as f:
         return ast.parse(f.read())
 
 
@@ -46,7 +43,7 @@ class TestExtractPythonStructure(unittest.TestCase):
 
     def test_matlab_path_unchanged(self):
         parser = Parser(Language(language()))
-        tree = parser.parse(load_matlab_file("/sample_matlab/fft_basic.m").encode("utf-8"))
+        tree = parser.parse(load_matlab_file(sample_matlab("fft_basic.m")).encode("utf-8"))
         result = extract_structure(tree)
         self.assertEqual(result["functions"], [])
         index_refs = [r for r in result["refs"] if r["kind"] == "index"]

@@ -7,10 +7,11 @@ import unittest
 from PyQt5.QtWidgets import QApplication
 
 from reader import MATLAB_TO_PYTHON, PYTHON_TO_MATLAB
+from tests.paths import sample_matlab, sample_python
 from ui.translator_window import TranslatorWindow
 
-FFT_MATLAB = "/workspace/sample_matlab/fft_basic.m"
-INDEXING_PYTHON = "/workspace/sample_python/indexing_ops_py.py"
+FFT_MATLAB = sample_matlab("fft_basic.m")
+INDEXING_PYTHON = sample_python("indexing_ops_py.py")
 
 
 class TestTranslatorWindow(unittest.TestCase):

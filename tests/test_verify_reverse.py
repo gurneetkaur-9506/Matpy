@@ -8,8 +8,9 @@ import numpy as np
 from checker import compare_outputs, verify
 from reader import PYTHON_TO_MATLAB, load_structure
 from rulebook import translate_with_rulebook_reverse
+from tests.paths import sample_python
 
-PY_SOURCE = "/workspace/sample_python/beamform_basic_py.py"
+PY_SOURCE = sample_python("beamform_basic_py.py")
 
 INPUTS = {
     "N": 8,

@@ -1,0 +1,13 @@
+clear; close all; clc;
+A = [1 2 3; 4 5 6];
+B = [7 8; 9 10; 11 12];
+disp('A(1,1) (first row, first col):');
+disp(A(1, 1));
+disp('A(2,3) (second row, third col):');
+disp(A(2, 3));
+disp('Matrix multiplication A * B:');
+disp(A * B);
+disp('Element-wise multiplication A .* A:');
+disp(A .* A);
+disp('First row of A via 1-based indexing:');
+disp(A(1, :));

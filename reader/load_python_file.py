@@ -10,4 +10,6 @@ def load_python_file(path):
 
 
 if __name__ == "__main__":
-    load_python_file("/sample_python/fft_basic_py.py")
+    from repo_paths import sample_python
+
+    load_python_file(sample_python("fft_basic_py.py"))

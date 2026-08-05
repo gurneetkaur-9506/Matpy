@@ -4,13 +4,14 @@ import unittest
 from reader import PYTHON_TO_MATLAB, load_structure
 from reader.structure import Function, Statement, Structure
 from rulebook import UNRESOLVED, translate_with_rulebook_reverse
+from tests.paths import sample_python
 
 
 class TestTranslateWithRulebookReverse(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.structure = load_structure(
-            "/workspace/sample_python/indexing_ops_py.py", PYTHON_TO_MATLAB
+            sample_python("indexing_ops_py.py"), PYTHON_TO_MATLAB
         )
         cls.result = translate_with_rulebook_reverse(cls.structure)
 
