@@ -4,8 +4,10 @@ from tree_sitter import Language, Parser
 from tree_sitter_matlab import language
 
 from reader import build_structure, load_matlab_file
+from reader.structure import Loop, Statement, Structure
 from rulebook import UNRESOLVED, translate_with_rulebook
-from tests.paths import sample_matlab
+from rulebook.translator import _translate_loop
+from tests.paths import sample_matlab, sample_matlab_real
 
 
 class TestTranslateWithRulebook(unittest.TestCase):
@@ -74,12 +76,84 @@ class TestLoopHandling(unittest.TestCase):
         )
         cls.result = translate_with_rulebook(build_structure(tree))
 
-    def test_loop_reported_unresolved(self):
+    def test_loop_body_translated(self):
         statements = self.result["functions"][0]["statements"]
-        self.assertTrue(any(s["python"] == UNRESOLVED for s in statements))
+        self.assertNotIn(UNRESOLVED, [s["python"] for s in statements])
         loop = [s for s in statements if s["kind"] == "loop"]
         self.assertEqual(len(loop), 1)
-        self.assertEqual(loop[0]["source"], "for n = 1:N")
+        self.assertEqual(loop[0]["python"], "for n in range(0, N):")
+        self.assertEqual(
+            [b["python"] for b in loop[0]["body"]],
+            ["af = af + np.exp(1i * (n - 1) * phase)"],
+        )
+
+    def test_loop_with_unresolved_body_marked_unresolved(self):
+        loop = Loop(
+            type="for",
+            header="n = 1:N",
+            statements=[Statement("command", "fprintf(1, '%d', n)")],
+        )
+        self.assertEqual(_translate_loop(loop)["python"], UNRESOLVED)
+
+
+class TestFindAndInterp1Rules(unittest.TestCase):
+    def _translate(self, text):
+        structure = Structure(statements=[Statement("assignment", text)])
+        return translate_with_rulebook(structure)["statements"][0]["python"]
+
+    def test_find_condition_maps_to_np_where(self):
+        self.assertEqual(
+            self._translate("nonZeroIndex = find(dataInRow ~= 0)"),
+            "nonZeroIndex = np.where(dataInRow != 0)[0]",
+        )
+
+    def test_find_with_multiple_args_stays_unresolved(self):
+        self.assertEqual(self._translate("i = find(a, b)"), UNRESOLVED)
+
+    def test_interp1_reorders_args_to_np_interp(self):
+        self.assertEqual(
+            self._translate(
+                "atlasRow(rowNo,:) = interp1(nonZeroXAxis,tempE,interpPoints)"
+            ),
+            "atlasRow[rowNo, :] = np.interp(interpPoints, nonZeroXAxis, tempE)",
+        )
+
+    def test_interp1_wrong_arity_stays_unresolved(self):
+        self.assertEqual(self._translate("y = interp1(x, v)"), UNRESOLVED)
+
+
+class TestAtlasDisplayResolves(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        parser = Parser(Language(language()))
+        tree = parser.parse(
+            load_matlab_file(sample_matlab_real("atlasDisplay.m")).encode("utf-8")
+        )
+        cls.func = translate_with_rulebook(build_structure(tree))["functions"][0]
+
+    def test_zero_unresolved_including_loop_body(self):
+        all_py = [s["python"] for s in self.func["statements"]]
+        for s in self.func["statements"]:
+            if s["kind"] == "loop":
+                all_py.extend(b["python"] for b in s["body"])
+        self.assertNotIn(UNRESOLVED, all_py)
+
+    def test_loop_header_translated(self):
+        loop = next(s for s in self.func["statements"] if s["kind"] == "loop")
+        self.assertEqual(loop["python"], "for rowNo in range(0, len(yAxis)):")
+
+    def test_find_in_loop_body(self):
+        loop = next(s for s in self.func["statements"] if s["kind"] == "loop")
+        body_py = [b["python"] for b in loop["body"]]
+        self.assertIn("nonZeroIndex = np.where(dataInRow != 0)[0]", body_py)
+
+    def test_interp1_in_loop_body(self):
+        loop = next(s for s in self.func["statements"] if s["kind"] == "loop")
+        body_py = [b["python"] for b in loop["body"]]
+        self.assertIn(
+            "atlasRow[rowNo, :] = np.interp(interpPoints, nonZeroXAxis, tempE)",
+            body_py,
+        )
 
 
 if __name__ == "__main__":

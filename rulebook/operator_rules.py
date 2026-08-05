@@ -45,6 +45,14 @@ def _find_last_operator(expr):
                 if i > 0 and expr[i - 1] == ".":
                     return i - 1, "./"
                 return i, "/"
+            if ch == "=" and i > 0 and expr[i - 1] == "~":
+                return i - 1, "~="
+            if ch in "+-":
+                j = i - 1
+                while j >= 0 and expr[j].isspace():
+                    j -= 1
+                if j >= 0 and (expr[j].isalnum() or expr[j] in ")]_."):
+                    return i, ch
         i -= 1
     return None, None
 

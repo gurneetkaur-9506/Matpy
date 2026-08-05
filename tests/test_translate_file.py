@@ -39,13 +39,13 @@ class TestTranslateFile(unittest.TestCase):
     @mock.patch("assistant.draft_translation._call_ollama", return_value=FAKE_RESPONSE)
     def test_beamform_sections(self, mock_call):
         result = translate_file(sample_matlab("beamform_basic.m"))
-        self.assertEqual(result["status"], "unresolved")
+        self.assertEqual(result["status"], "ok")
         self.assertEqual(result["sections"]["reader"]["status"], "ok")
         self.assertEqual(result["sections"]["reader"]["functions"], ["beamform_basic"])
-        self.assertEqual(result["sections"]["rulebook"]["status"], "unresolved")
-        self.assertEqual(result["sections"]["rulebook"]["unresolved"], 1)
-        self.assertEqual(result["sections"]["assistant"]["status"], "drafted")
-        self.assertEqual(result["sections"]["assistant"]["drafted"], ["beamform_basic"])
+        self.assertEqual(result["sections"]["rulebook"]["status"], "ok")
+        self.assertEqual(result["sections"]["rulebook"]["unresolved"], 0)
+        self.assertEqual(result["sections"]["assistant"]["status"], "none")
+        self.assertEqual(result["sections"]["assistant"]["drafted"], [])
         self.assertEqual(result["sections"]["checker"]["status"], "skipped")
 
     def test_reader_error(self):

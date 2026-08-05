@@ -124,6 +124,22 @@ def _translate_expr(expr):
             return "%s(%s)" % (_PLOT_BUILTINS[name], ", ".join(translated))
         if name in _OTHER_BUILTINS:
             return UNRESOLVED
+        if name == "find":
+            args = _split_top_level(argtext, ",")
+            if len(args) != 1:
+                return UNRESOLVED
+            cond = _translate_expr(args[0])
+            if cond == UNRESOLVED:
+                return UNRESOLVED
+            return "np.where(%s)[0]" % cond
+        if name == "interp1":
+            args = _split_top_level(argtext, ",")
+            if len(args) != 3:
+                return UNRESOLVED
+            translated = [_translate_expr(a) for a in args]
+            if any(t == UNRESOLVED for t in translated):
+                return UNRESOLVED
+            return "np.interp(%s, %s, %s)" % (translated[2], translated[0], translated[1])
         args = _split_top_level(argtext, ",")
         if args and all(_is_index_like(a) for a in args):
             return apply_indexing_rule(expr)
@@ -146,6 +162,10 @@ def _translate_expr(expr):
         return "%s / %s" % (left_py, right_py)
     if op == "/":
         return "np.linalg.solve(%s.T, %s.T).T" % (right_py, left_py)
+    if op == "~=":
+        return "%s != %s" % (left_py, right_py)
+    if op in ("+", "-"):
+        return "%s %s %s" % (left_py, op, right_py)
     return UNRESOLVED
 
 
@@ -181,13 +201,32 @@ def _comment_for(stmt, python):
     return "# MATLAB: %s; -> Python: %s" % (stmt.text, _note_for(stmt, python))
 
 
+def _translate_loop(stmt):
+    header = "%s %s" % (stmt.type, stmt.header)
+    body = [_translate_statement(s) for s in stmt.statements]
+    if any(s["python"] == UNRESOLVED for s in body):
+        return {"kind": "loop", "source": header, "python": UNRESOLVED}
+
+    var, eq, expr = stmt.header.partition("=")
+    if not eq or ":" not in expr:
+        return {"kind": "loop", "source": header, "python": UNRESOLVED}
+    converted = apply_indexing_rule(expr.strip())
+    if ":" not in converted:
+        return {"kind": "loop", "source": header, "python": UNRESOLVED}
+    start, stop = converted.split(":", 1)
+    loop_py = "for %s in range(%s, %s):" % (var.strip(), start, stop)
+    return {
+        "kind": "loop",
+        "source": header,
+        "python": loop_py,
+        "comment": "# MATLAB: %s; -> Python: %s" % (header, loop_py),
+        "body": body,
+    }
+
+
 def _translate_statement(stmt):
     if not hasattr(stmt, "kind"):
-        return {
-            "kind": "loop",
-            "source": "%s %s" % (stmt.type, stmt.header),
-            "python": UNRESOLVED,
-        }
+        return _translate_loop(stmt)
     if stmt.kind == "command":
         if stmt.text in _COMMANDS:
             return {

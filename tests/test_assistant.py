@@ -218,7 +218,7 @@ class TestDraftRouting(unittest.TestCase):
         self.assertIn("draft", routed["functions"][1])
 
     @mock.patch("assistant.draft_translation._call_ollama", return_value=FAKE_RESPONSE)
-    def test_beamform_basic_routed(self, mock_call):
+    def test_beamform_basic_not_routed(self, mock_call):
         parser = Parser(Language(language()))
         tree = parser.parse(
             load_matlab_file(sample_matlab("beamform_basic.m")).encode("utf-8")
@@ -227,8 +227,8 @@ class TestDraftRouting(unittest.TestCase):
         routed = draft_unresolved_functions(result, {"libs": []})
         func = routed["functions"][0]
         self.assertEqual(func["name"], "beamform_basic")
-        self.assertIn("draft", func)
-        self.assertIn("np.sum(x)", func["draft"]["code"])
+        self.assertNotIn("draft", func)
+        mock_call.assert_not_called()
 
 
 if __name__ == "__main__":

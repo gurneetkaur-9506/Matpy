@@ -42,6 +42,8 @@ def _emit_block(statements, lines, indent=""):
             continue
         lines.append(indent + stmt["comment"])
         lines.append(indent + stmt["python"])
+        if stmt["kind"] == "loop":
+            _emit_block(stmt.get("body", []), lines, indent=indent + "    ")
     if dropped:
         lines.append(
             indent
