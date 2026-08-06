@@ -10,7 +10,10 @@ def draft_unresolved_functions(
     output_key = "matlab" if direction == PYTHON_TO_MATLAB else "python"
     for func in result["functions"]:
         if any(s.get(output_key) == UNRESOLVED for s in func["statements"]):
-            func["draft"] = draft_translation(
-                func, specialist_lib_contents, direction=direction
-            )
+            try:
+                func["draft"] = draft_translation(
+                    func, specialist_lib_contents, direction=direction
+                )
+            except Exception as exc:
+                func["draft_error"] = str(exc)
     return result

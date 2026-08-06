@@ -252,5 +252,113 @@ class TestAccuracyLabel(unittest.TestCase):
         self.assertEqual(accuracy_text(None), "Accuracy: --")
 
 
+class TestReportText(unittest.TestCase):
+    def test_formats_like_expected_example(self):
+        from ui.summary import report_text
+
+        entry = {
+            "line": 47,
+            "source": "interp1 with 3 outputs",
+            "reason": "not yet supported, left as TODO comment.",
+            "issue": "unresolved",
+            "stage": "rulebook",
+        }
+        self.assertEqual(
+            report_text(entry),
+            "Line 47: interp1 with 3 outputs - not yet supported, left as "
+            "TODO comment.",
+        )
+
+    def test_checker_entry_uses_stage_prefix(self):
+        from ui.summary import report_text
+
+        entry = {
+            "line": None,
+            "source": "/path/to/file.m",
+            "reason": "The checker could not decide whether the outputs match.",
+            "issue": "review needed",
+            "stage": "checker",
+        }
+        text = report_text(entry)
+        self.assertTrue(text.startswith("Checker: "))
+        self.assertIn("could not decide", text)
+
+    def test_entry_without_source_uses_reason_only(self):
+        from ui.summary import report_text
+
+        entry = {
+            "line": 3,
+            "source": "",
+            "reason": "No rule matches the function 'fft'.",
+            "issue": "unresolved",
+            "stage": "rulebook",
+        }
+        self.assertEqual(report_text(entry), "Line 3: No rule matches the function 'fft'.")
+
+
+class TestReportPanel(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.app = QApplication.instance() or QApplication([])
+
+    def test_panel_collapsed_by_default(self):
+        win = TranslatorWindow(matlab_path=FFT_MATLAB)
+        win.show()
+        self.assertFalse(win.report_widget.isVisible())
+        self.assertFalse(win.report_button.isChecked())
+        self.assertEqual(win.report_button.text(), "Report")
+        win.close()
+
+    def test_toggle_expands_and_collapses(self):
+        win = TranslatorWindow(matlab_path=FFT_MATLAB)
+        win.show()
+        win.report_button.click()
+        self.assertTrue(win.report_widget.isVisible())
+        win.report_button.click()
+        self.assertFalse(win.report_widget.isVisible())
+        win.close()
+
+    def test_report_populated_after_translate_with_issues(self):
+        from unittest import mock
+
+        win = TranslatorWindow(matlab_path=sample_python("beamform_basic_py.py"))
+        reverse_index = win.direction_combo.findData(PYTHON_TO_MATLAB)
+        win.direction_combo.setCurrentIndex(reverse_index)
+        with mock.patch(
+            "assistant.draft_translation._call_ollama", return_value=FAKE_RESPONSE
+        ):
+            win.translate_button.click()
+        text = win.report_pane.toPlainText()
+        self.assertIn("Line", text)
+        self.assertIn("n = np.arange(N)", text)
+        self.assertEqual(win.report_button.text(), "Report (%d)" % len(text.splitlines()))
+        win.close()
+
+    def test_report_empty_state_after_clean_translate(self):
+        win = TranslatorWindow(matlab_path=FFT_MATLAB)
+        win.translate_button.click()
+        self.assertEqual(win.report_pane.toPlainText(), "Nothing to report.")
+        self.assertEqual(win.report_button.text(), "Report")
+        win.close()
+
+    def test_report_reset_on_direction_change(self):
+        win = TranslatorWindow(matlab_path=FFT_MATLAB)
+        win.show()
+        win.translate_button.click()
+        self.assertEqual(win.report_pane.toPlainText(), "Nothing to report.")
+        reverse_index = win.direction_combo.findData(PYTHON_TO_MATLAB)
+        win.direction_combo.setCurrentIndex(reverse_index)
+        self.assertEqual(win.report_pane.toPlainText(), "")
+        self.assertFalse(win.report_widget.isVisible())
+        self.assertEqual(win.report_button.text(), "Report")
+        win.close()
+
+    def test_clean_translate_reports_nothing(self):
+        win = TranslatorWindow(matlab_path=FFT_MATLAB)
+        win.translate_button.click()
+        self.assertEqual(win.report_pane.toPlainText(), "Nothing to report.")
+        win.close()
+
+
 if __name__ == "__main__":
     unittest.main()

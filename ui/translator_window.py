@@ -19,11 +19,11 @@ from PyQt5.QtWidgets import (
 )
 
 from repo_paths import sample_matlab
-from checker import accuracy
+from checker import accuracy, build_translation_report
 from reader import MATLAB_TO_PYTHON, PYTHON_TO_MATLAB, load_matlab_file
 from translator import translate_file
 from ui.highlight import ProblemLineHighlighter
-from ui.summary import accuracy_style, accuracy_text, status_line
+from ui.summary import accuracy_style, accuracy_text, report_text, status_line
 
 _DIRECTION_ITEMS = (
     ("MATLAB -> Python", MATLAB_TO_PYTHON),
@@ -55,7 +55,7 @@ def section_marker(status):
         return "verified"
     if status in ("unresolved", "drafted", "review needed", "skipped"):
         return "unverified"
-    if status in ("error", "failed"):
+    if status in ("error", "failed", "errored"):
         return "flagged"
     return "unverified"
 
@@ -123,6 +123,28 @@ class TranslatorWindow(QMainWindow):
         self.details_widget.setLayout(details_row)
         self.details_widget.setVisible(False)
 
+        self.report_button = QToolButton()
+        self.report_button.setText("Report")
+        self.report_button.setCheckable(True)
+        self.report_button.setArrowType(Qt.RightArrow)
+        self.report_button.toggled.connect(self._toggle_report)
+
+        self.report_pane = QPlainTextEdit()
+        self.report_pane.setReadOnly(True)
+        self.report_pane.setMaximumHeight(180)
+        self.report_pane.setPlaceholderText(
+            "Run a translation to populate the report."
+        )
+        self.report_widget = QWidget()
+        report_layout = QVBoxLayout()
+        report_layout.setContentsMargins(0, 0, 0, 0)
+        report_title = QLabel("Translation Report")
+        report_title.setStyleSheet("font-weight: bold;")
+        report_layout.addWidget(report_title)
+        report_layout.addWidget(self.report_pane)
+        self.report_widget.setLayout(report_layout)
+        self.report_widget.setVisible(False)
+
         summary_row = QHBoxLayout()
         summary_row.addWidget(self.status_line)
         summary_row.addStretch(1)
@@ -130,12 +152,14 @@ class TranslatorWindow(QMainWindow):
         self.accuracy_label.setStyleSheet(accuracy_style(None))
         summary_row.addWidget(self.accuracy_label)
         summary_row.addWidget(self.details_button)
+        summary_row.addWidget(self.report_button)
 
         central = QWidget()
         layout = QVBoxLayout()
         layout.addLayout(buttons)
         layout.addLayout(summary_row)
         layout.addWidget(self.details_widget)
+        layout.addWidget(self.report_widget)
         layout.addLayout(pane_labels)
         layout.addWidget(self.stack)
         central.setLayout(layout)
@@ -199,6 +223,9 @@ class TranslatorWindow(QMainWindow):
         self.python_highlighter.set_problem_lines([])
         self.accuracy_label.setText(accuracy_text(None))
         self.accuracy_label.setStyleSheet(accuracy_style(None))
+        self.report_pane.clear()
+        self.report_button.setText("Report")
+        self.report_button.setChecked(False)
 
     def _set_section_marker(self, stage, status):
         label = self.section_labels[stage]
@@ -208,6 +235,20 @@ class TranslatorWindow(QMainWindow):
     def _toggle_details(self, checked):
         self.details_widget.setVisible(checked)
         self.details_button.setArrowType(Qt.DownArrow if checked else Qt.RightArrow)
+
+    def _toggle_report(self, checked):
+        self.report_widget.setVisible(checked)
+        self.report_button.setArrowType(Qt.DownArrow if checked else Qt.RightArrow)
+
+    def _update_report(self, result):
+        entries = build_translation_report(result)
+        lines = [report_text(entry) for entry in entries]
+        self.report_pane.setPlainText(
+            "\n".join(lines) if lines else "Nothing to report."
+        )
+        self.report_button.setText(
+            "Report (%d)" % len(entries) if entries else "Report"
+        )
 
     def _update_sections(self, sections):
         for stage, info in sections.items():
@@ -228,6 +269,7 @@ class TranslatorWindow(QMainWindow):
         self._update_sections(result["sections"])
         self.status_line.setText(status_line(result))
         self._update_accuracy(result)
+        self._update_report(result)
         self.statusBar().showMessage(
             "status=%s checker=%s" % (result["status"], result["sections"]["checker"]["status"])
         )

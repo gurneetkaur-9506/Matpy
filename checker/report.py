@@ -1,0 +1,275 @@
+"""Build a plain-language report of every issue in a translation result.
+
+The Checker's job is to explain, not just to score.  build_translation_report()
+flattens the three kinds of findings the pipeline produces into a single list
+of dicts, one per issue:
+
+    * rulebook lines that were left UNRESOLVED,
+    * Assistant drafts that failed or were flagged with low confidence,
+    * Checker verdicts of "failed" or "review needed".
+
+Each entry tells a human what went wrong: where it happened (line number in
+the original source when it can be located), the original source text, what
+the pipeline attempted, and a plain-language reason -- never a stack trace.
+"""
+
+import re
+
+from rulebook import UNRESOLVED
+
+LOW_CONFIDENCE = 0.5
+
+_KIND_NORMALIZE = {
+    "Assign": "assignment",
+    "Expr": "function_call",
+    "Return": "return",
+    "Import": "command",
+    "ImportFrom": "command",
+}
+
+_CALL_NAME = re.compile(r"^\s*([A-Za-z_][A-Za-z0-9_]*)\s*\(")
+
+
+def _normalized_kind(stmt):
+    kind = stmt.get("kind")
+    return _KIND_NORMALIZE.get(kind, kind)
+
+
+def _source_lines(result):
+    path = result.get("file")
+    if not path:
+        return []
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return f.read().splitlines()
+    except (OSError, UnicodeDecodeError):
+        return []
+
+
+def _locate(source, source_lines):
+    """Return the 1-based line where ``source`` begins, or None."""
+    if not source or not source_lines:
+        return None
+    first = next((line.strip() for line in source.splitlines() if line.strip()), None)
+    if not first:
+        return None
+    for index, line in enumerate(source_lines):
+        if first in line:
+            return index + 1
+    return None
+
+
+def _locate_function(func, source_lines):
+    name = func.get("name")
+    if not name or not source_lines:
+        return None
+    pattern = re.compile(r"\b(function|def)\b.*\b%s\b" % re.escape(name))
+    for index, line in enumerate(source_lines):
+        if pattern.search(line.strip()):
+            return index + 1
+    return None
+
+
+def _walk(statements):
+    for stmt in statements:
+        yield stmt
+        yield from _walk(stmt.get("body") or [])
+
+
+def _all_statements(result):
+    for stmt in _walk(result.get("statements") or []):
+        yield stmt
+    for func in result.get("functions") or []:
+        for stmt in _walk(func.get("statements") or []):
+            yield stmt
+
+
+def _is_unresolved(stmt):
+    return stmt.get("python") == UNRESOLVED or stmt.get("matlab") == UNRESOLVED
+
+
+def _attempted_text(stmt):
+    kind = _normalized_kind(stmt)
+    if kind == "command":
+        return "looked the command up in the rulebook's command table"
+    if kind == "assignment":
+        return (
+            "tried to translate the right-hand expression with the operator "
+            "and builtin rules"
+        )
+    if kind == "function_call":
+        return "tried to map the call through the builtin, plot, and indexing rules"
+    if kind == "loop":
+        return "tried to convert the loop into a Python range() loop"
+    if kind == "return":
+        return "tried to reconstruct the return value with the reverse rules"
+    return "tried to translate the statement with the rulebook"
+
+
+def _unresolved_reason(stmt):
+    kind = _normalized_kind(stmt)
+    source = stmt.get("source") or ""
+    if kind == "command":
+        return (
+            "MATLAB command %r has no direct Python equivalent in the "
+            "rulebook." % source
+        )
+    if kind == "function_call":
+        match = _CALL_NAME.match(source)
+        if match:
+            return (
+                "The rulebook has no rule for the function %r, so the call "
+                "was left for manual review." % match.group(1)
+            )
+        return "The call does not match any rulebook pattern."
+    if kind == "assignment":
+        target, sep, value = source.partition("=")
+        expr = value.strip() or source
+        return (
+            "The expression %r could not be reduced by the rulebook's "
+            "operator or builtin rules." % expr
+        )
+    if kind == "loop":
+        return (
+            "The loop %r does not fit the range pattern the rulebook "
+            "translates." % source
+        )
+    if kind == "return":
+        return (
+            "The return value in %r could not be reconstructed by the "
+            "reverse rules." % source
+        )
+    return "No rulebook rule matched this statement."
+
+
+def _unresolved_entry(stmt, source_lines):
+    source = stmt.get("source") or ""
+    return {
+        "line": _locate(source, source_lines),
+        "source": source,
+        "issue": "unresolved",
+        "stage": "rulebook",
+        "attempted": _attempted_text(stmt),
+        "reason": _unresolved_reason(stmt),
+    }
+
+
+def _plain_reason(error):
+    """Return a single plain-language line for an error string."""
+    if not error:
+        return "The Assistant failed before returning a draft."
+    for line in str(error).splitlines():
+        if line.strip():
+            return line.strip()
+    return "The Assistant failed before returning a draft."
+
+
+def _assistant_entries(result, source_lines):
+    entries = []
+    for func in result.get("functions") or []:
+        if func.get("draft_error") is not None:
+            entries.append(
+                {
+                    "line": _locate_function(func, source_lines),
+                    "source": func.get("name") or "",
+                    "issue": "assistant error",
+                    "stage": "assistant",
+                    "attempted": (
+                        "Asked the Assistant to draft a translation of "
+                        "function %r." % func.get("name")
+                    ),
+                    "reason": _plain_reason(func.get("draft_error")),
+                }
+            )
+            continue
+        draft = func.get("draft") or {}
+        confidence = draft.get("confidence")
+        if confidence is None or confidence >= LOW_CONFIDENCE:
+            continue
+        notes = draft.get("notes") or []
+        if notes:
+            reason = " ".join(notes)
+        else:
+            reason = (
+                "The Assistant reported confidence %.2f, below the %.2f "
+                "threshold for accepting a draft without review."
+                % (confidence, LOW_CONFIDENCE)
+            )
+        entries.append(
+            {
+                "line": _locate_function(func, source_lines),
+                "source": func.get("name") or "",
+                "issue": "low confidence",
+                "stage": "assistant",
+                "attempted": (
+                    "Drafted a translation of function %r but flagged it as "
+                    "uncertain." % func.get("name")
+                ),
+                "reason": reason,
+            }
+        )
+    return entries
+
+
+def _checker_entries(result):
+    checker = (result.get("sections") or {}).get("checker") or {}
+    status = checker.get("status")
+    if status == "failed":
+        reason = (
+            "The numeric cross-check compared the reference and translated "
+            "outputs and they disagreed beyond the allowed tolerance."
+        )
+    elif status == "review needed":
+        reason = (
+            "The checker could not decide whether the outputs match: an "
+            "execution failure, misaligned output names, shape mismatch, or "
+            "non-finite values were involved."
+        )
+    else:
+        return []
+    return [
+        {
+            "line": None,
+            "source": str(result.get("file") or ""),
+            "issue": status,
+            "stage": "checker",
+            "attempted": (
+                "Cross-checked the translated output against the reference "
+                "numerically."
+            ),
+            "reason": reason,
+        }
+    ]
+
+
+def build_translation_report(result):
+    """Collect every issue in a translate_file() result into one list.
+
+    Args:
+        result: The result dict returned by translator.translate_file.
+
+    Returns:
+        A list of dicts, one per issue, in pipeline order (rulebook
+        unresolved lines first, then Assistant low-confidence flags and
+        failures, then the Checker verdict).  Each dict has the keys:
+
+            line:      1-based line number in the original source, or None
+                       when it cannot be located (e.g. a whole-file verdict).
+            source:    the original source text of the problematic line.
+            issue:     "unresolved", "low confidence", "assistant error",
+                       "failed", or "review needed".
+            stage:     the pipeline stage that reported it: "rulebook",
+                       "assistant", or "checker".
+            attempted: what that stage tried to do.
+            reason:    a plain-language explanation of why it could not be
+                       resolved.  Never a stack trace.
+    """
+    source_lines = _source_lines(result)
+    report = [
+        _unresolved_entry(stmt, source_lines)
+        for stmt in _all_statements(result)
+        if _is_unresolved(stmt)
+    ]
+    report.extend(_assistant_entries(result, source_lines))
+    report.extend(_checker_entries(result))
+    return report

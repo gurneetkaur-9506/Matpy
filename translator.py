@@ -173,10 +173,13 @@ def translate_file(
         rulebook_result, _specialist_lib_contents(), direction=direction
     )
     drafted = [f["name"] for f in rulebook_result["functions"] if "draft" in f]
+    errored = [f["name"] for f in rulebook_result["functions"] if "draft_error" in f]
     result["functions"] = rulebook_result["functions"]
+    result["statements"] = rulebook_result["statements"]
     result["sections"]["assistant"] = {
-        "status": "drafted" if drafted else "none",
+        "status": "drafted" if drafted else "errored" if errored else "none",
         "drafted": drafted,
+        "errors": errored,
     }
 
     problems = []

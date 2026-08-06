@@ -83,6 +83,25 @@ def accuracy_style(score):
     return ACCURACY_STYLE["low"]
 
 
+def report_text(entry):
+    """Format one build_translation_report() entry as a plain-language line.
+
+    Example:
+        "Line 47: interp1 with 3 outputs - not yet supported, left as
+        TODO comment."
+    """
+    where = (
+        "Line %d" % entry["line"]
+        if entry.get("line")
+        else entry.get("stage", "checker").title()
+    )
+    source = entry.get("source") or ""
+    reason = entry.get("reason") or ""
+    if source and entry.get("stage") != "checker":
+        return "%s: %s - %s" % (where, source, reason)
+    return "%s: %s" % (where, reason)
+
+
 def summarize_translation(paths=None, beamform_inputs=None):
     paths = paths or SAMPLE_FILES
     rows = []
