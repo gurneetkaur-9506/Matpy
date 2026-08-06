@@ -19,10 +19,11 @@ from PyQt5.QtWidgets import (
 )
 
 from repo_paths import sample_matlab
+from checker import accuracy
 from reader import MATLAB_TO_PYTHON, PYTHON_TO_MATLAB
 from translator import translate_file
 from ui.highlight import ProblemLineHighlighter
-from ui.summary import status_line
+from ui.summary import accuracy_style, accuracy_text, status_line
 
 DEFAULT_MATLAB_PATH = sample_matlab("fft_basic.m")
 
@@ -139,6 +140,9 @@ class MinimalTranslatorWindow(QMainWindow):
         summary_row = QHBoxLayout()
         summary_row.addWidget(self.status_line)
         summary_row.addStretch(1)
+        self.accuracy_label = QLabel(accuracy_text(None))
+        self.accuracy_label.setStyleSheet(accuracy_style(None))
+        summary_row.addWidget(self.accuracy_label)
         summary_row.addWidget(self.details_button)
 
         central = QWidget()
@@ -212,6 +216,8 @@ class MinimalTranslatorWindow(QMainWindow):
         self.output_label.setText("Output: MATLAB" if reverse else "Output: Python")
         self.python_pane.setPlainText("")
         self.python_highlighter.set_problem_lines([])
+        self.accuracy_label.setText(accuracy_text(None))
+        self.accuracy_label.setStyleSheet(accuracy_style(None))
 
     def _set_section_marker(self, stage, status):
         label = self.section_labels[stage]
@@ -240,9 +246,18 @@ class MinimalTranslatorWindow(QMainWindow):
         self.python_highlighter.set_problem_lines(result.get("problems", []))
         self._update_sections(result["sections"])
         self.status_line.setText(status_line(result))
+        self._update_accuracy(result)
         self.statusBar().showMessage(
             "Translated %s (status=%s)" % (self.matlab_path, result["status"])
         )
+
+    def _update_accuracy(self, result):
+        if result.get("status") == "error":
+            score = None
+        else:
+            score = accuracy(result)["score"]
+        self.accuracy_label.setText(accuracy_text(score))
+        self.accuracy_label.setStyleSheet(accuracy_style(score))
 
     def _save_correction(self):
         if not self.matlab_path:

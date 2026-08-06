@@ -8,6 +8,7 @@ from PyQt5.QtWidgets import QApplication
 
 from reader import MATLAB_TO_PYTHON, PYTHON_TO_MATLAB
 from tests.paths import sample_matlab, sample_python
+from ui.summary import ACCURACY_STYLE, accuracy_style, accuracy_text
 from ui.translator_window import TranslatorWindow
 
 FFT_MATLAB = sample_matlab("fft_basic.m")
@@ -201,6 +202,54 @@ class TestTranslatorWindow(unittest.TestCase):
         self.assertEqual(win.current_direction(), MATLAB_TO_PYTHON)
         self.assertIn("fs = 1000;", win.matlab_pane.toPlainText())
         win.close()
+
+
+class TestAccuracyLabel(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.app = QApplication.instance() or QApplication([])
+
+    def test_label_initially_unknown(self):
+        win = TranslatorWindow(matlab_path=FFT_MATLAB)
+        self.assertEqual(win.accuracy_label.text(), "Accuracy: --")
+        self.assertIn("#95a5a6", win.accuracy_label.styleSheet())
+        win.close()
+
+    def test_label_updates_after_translate(self):
+        win = TranslatorWindow(matlab_path=FFT_MATLAB)
+        win.translate_button.click()
+        self.assertEqual(win.accuracy_label.text(), "Accuracy: 100%")
+        self.assertIn("#1e8e3e", win.accuracy_label.styleSheet())
+        win.close()
+
+    def test_label_resets_on_direction_change(self):
+        win = TranslatorWindow(matlab_path=FFT_MATLAB)
+        win.translate_button.click()
+        self.assertEqual(win.accuracy_label.text(), "Accuracy: 100%")
+        reverse_index = win.direction_combo.findData(PYTHON_TO_MATLAB)
+        win.direction_combo.setCurrentIndex(reverse_index)
+        self.assertEqual(win.accuracy_label.text(), "Accuracy: --")
+        win.close()
+
+    def test_style_green_above_90(self):
+        self.assertEqual(accuracy_style(95), ACCURACY_STYLE["high"])
+        self.assertEqual(accuracy_style(100), ACCURACY_STYLE["high"])
+
+    def test_style_yellow_from_70_to_90(self):
+        self.assertEqual(accuracy_style(70), ACCURACY_STYLE["mid"])
+        self.assertEqual(accuracy_style(90), ACCURACY_STYLE["mid"])
+
+    def test_style_red_below_70(self):
+        self.assertEqual(accuracy_style(69), ACCURACY_STYLE["low"])
+        self.assertEqual(accuracy_style(0), ACCURACY_STYLE["low"])
+
+    def test_style_unknown_when_no_score(self):
+        self.assertEqual(accuracy_style(None), ACCURACY_STYLE["unknown"])
+
+    def test_text_formatting(self):
+        self.assertEqual(accuracy_text(87), "Accuracy: 87%")
+        self.assertEqual(accuracy_text(99.6), "Accuracy: 100%")
+        self.assertEqual(accuracy_text(None), "Accuracy: --")
 
 
 if __name__ == "__main__":

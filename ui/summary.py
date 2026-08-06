@@ -53,6 +53,36 @@ def status_line(result):
     )
 
 
+ACCURACY_STYLE = {
+    "high": "color: #1e8e3e; font-weight: bold;",
+    "mid": "color: #b58900; font-weight: bold;",
+    "low": "color: #c62828; font-weight: bold;",
+    "unknown": "color: #95a5a6;",
+}
+
+
+def accuracy_text(score):
+    """Return the label text for an accuracy score (0-100) or None."""
+    if score is None:
+        return "Accuracy: --"
+    return "Accuracy: %d%%" % round(score)
+
+
+def accuracy_style(score):
+    """Pick a color style for an accuracy score.
+
+    Green above 90%, yellow for 70-90%, red below 70%; a neutral grey when
+    no score is available yet.
+    """
+    if score is None:
+        return ACCURACY_STYLE["unknown"]
+    if score > 90:
+        return ACCURACY_STYLE["high"]
+    if score >= 70:
+        return ACCURACY_STYLE["mid"]
+    return ACCURACY_STYLE["low"]
+
+
 def summarize_translation(paths=None, beamform_inputs=None):
     paths = paths or SAMPLE_FILES
     rows = []
