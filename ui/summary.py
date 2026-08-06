@@ -53,6 +53,28 @@ def status_line(result):
     )
 
 
+def summary_line(result):
+    """One-line summary of a translation result, e.g.
+    "12 lines translated, 2 need review, accuracy 87%."
+
+    The accuracy clause is omitted when no score can be computed.
+    """
+    auto, review, _ = status_counts(result)
+    try:
+        from checker import accuracy
+
+        score = accuracy(result)["score"]
+    except Exception:
+        score = None
+    if score is None:
+        return "%d lines translated, %d need review." % (auto, review)
+    return "%d lines translated, %d need review, accuracy %d%%." % (
+        auto,
+        review,
+        round(score),
+    )
+
+
 ACCURACY_STYLE = {
     "high": "color: #1e8e3e; font-weight: bold;",
     "mid": "color: #b58900; font-weight: bold;",

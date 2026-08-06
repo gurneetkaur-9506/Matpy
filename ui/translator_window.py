@@ -23,7 +23,7 @@ from checker import accuracy, build_translation_report
 from reader import MATLAB_TO_PYTHON, PYTHON_TO_MATLAB, load_matlab_file
 from translator import translate_file
 from ui.highlight import ProblemLineHighlighter
-from ui.summary import accuracy_style, accuracy_text, report_text, status_line
+from ui.summary import accuracy_style, report_text, summary_line
 
 _DIRECTION_ITEMS = (
     ("MATLAB -> Python", MATLAB_TO_PYTHON),
@@ -104,6 +104,7 @@ class TranslatorWindow(QMainWindow):
         pane_labels.addWidget(self.output_label)
 
         self.status_line = QLabel("Not translated yet")
+        self.status_line.setStyleSheet(accuracy_style(None))
         self.details_button = QToolButton()
         self.details_button.setText("Details")
         self.details_button.setCheckable(True)
@@ -148,9 +149,6 @@ class TranslatorWindow(QMainWindow):
         summary_row = QHBoxLayout()
         summary_row.addWidget(self.status_line)
         summary_row.addStretch(1)
-        self.accuracy_label = QLabel(accuracy_text(None))
-        self.accuracy_label.setStyleSheet(accuracy_style(None))
-        summary_row.addWidget(self.accuracy_label)
         summary_row.addWidget(self.details_button)
         summary_row.addWidget(self.report_button)
 
@@ -159,9 +157,9 @@ class TranslatorWindow(QMainWindow):
         layout.addLayout(buttons)
         layout.addLayout(summary_row)
         layout.addWidget(self.details_widget)
-        layout.addWidget(self.report_widget)
         layout.addLayout(pane_labels)
         layout.addWidget(self.stack)
+        layout.addWidget(self.report_widget)
         central.setLayout(layout)
         self.setCentralWidget(central)
 
@@ -221,8 +219,8 @@ class TranslatorWindow(QMainWindow):
         self.output_label.setText("Output: MATLAB" if reverse else "Output: Python")
         self.python_pane.setPlainText("")
         self.python_highlighter.set_problem_lines([])
-        self.accuracy_label.setText(accuracy_text(None))
-        self.accuracy_label.setStyleSheet(accuracy_style(None))
+        self.status_line.setText("Not translated yet")
+        self.status_line.setStyleSheet(accuracy_style(None))
         self.report_pane.clear()
         self.report_button.setText("Report")
         self.report_button.setChecked(False)
@@ -267,20 +265,15 @@ class TranslatorWindow(QMainWindow):
         self.python_pane.setPlainText(result["python"])
         self.python_highlighter.set_problem_lines(result.get("problems", []))
         self._update_sections(result["sections"])
-        self.status_line.setText(status_line(result))
-        self._update_accuracy(result)
+        self._update_summary(result)
         self._update_report(result)
         self.statusBar().showMessage(
             "status=%s checker=%s" % (result["status"], result["sections"]["checker"]["status"])
         )
 
-    def _update_accuracy(self, result):
-        if result.get("status") == "error":
-            score = None
-        else:
-            score = accuracy(result)["score"]
-        self.accuracy_label.setText(accuracy_text(score))
-        self.accuracy_label.setStyleSheet(accuracy_style(score))
+    def _update_summary(self, result):
+        self.status_line.setText(summary_line(result))
+        self.status_line.setStyleSheet(accuracy_style(accuracy(result)["score"]))
 
 
 def main():

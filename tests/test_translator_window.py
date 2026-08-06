@@ -8,7 +8,7 @@ from PyQt5.QtWidgets import QApplication
 
 from reader import MATLAB_TO_PYTHON, PYTHON_TO_MATLAB
 from tests.paths import sample_matlab, sample_python
-from ui.summary import ACCURACY_STYLE, accuracy_style, accuracy_text
+from ui.summary import ACCURACY_STYLE, accuracy_style, accuracy_text, summary_line
 from ui.translator_window import TranslatorWindow
 
 FFT_MATLAB = sample_matlab("fft_basic.m")
@@ -204,31 +204,51 @@ class TestTranslatorWindow(unittest.TestCase):
         win.close()
 
 
-class TestAccuracyLabel(unittest.TestCase):
+class TestSummaryLine(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.app = QApplication.instance() or QApplication([])
 
-    def test_label_initially_unknown(self):
+    def test_summary_initially_unknown(self):
         win = TranslatorWindow(matlab_path=FFT_MATLAB)
-        self.assertEqual(win.accuracy_label.text(), "Accuracy: --")
-        self.assertIn("#95a5a6", win.accuracy_label.styleSheet())
+        self.assertEqual(win.status_line.text(), "Not translated yet")
+        self.assertIn("#95a5a6", win.status_line.styleSheet())
         win.close()
 
-    def test_label_updates_after_translate(self):
+    def test_summary_updates_after_translate(self):
         win = TranslatorWindow(matlab_path=FFT_MATLAB)
         win.translate_button.click()
-        self.assertEqual(win.accuracy_label.text(), "Accuracy: 100%")
-        self.assertIn("#1e8e3e", win.accuracy_label.styleSheet())
+        text = win.status_line.text()
+        self.assertIn("lines translated", text)
+        self.assertIn("0 need review", text)
+        self.assertIn("accuracy 100%", text)
+        self.assertIn("#1e8e3e", win.status_line.styleSheet())
         win.close()
 
-    def test_label_resets_on_direction_change(self):
+    def test_summary_resets_on_direction_change(self):
         win = TranslatorWindow(matlab_path=FFT_MATLAB)
         win.translate_button.click()
-        self.assertEqual(win.accuracy_label.text(), "Accuracy: 100%")
+        self.assertIn("accuracy 100%", win.status_line.text())
         reverse_index = win.direction_combo.findData(PYTHON_TO_MATLAB)
         win.direction_combo.setCurrentIndex(reverse_index)
-        self.assertEqual(win.accuracy_label.text(), "Accuracy: --")
+        self.assertEqual(win.status_line.text(), "Not translated yet")
+        self.assertIn("#95a5a6", win.status_line.styleSheet())
+        win.close()
+
+    def test_details_hidden_by_default(self):
+        win = TranslatorWindow(matlab_path=FFT_MATLAB)
+        win.show()
+        self.assertFalse(win.details_widget.isVisible())
+        self.assertFalse(win.details_button.isChecked())
+        win.close()
+
+    def test_details_toggles(self):
+        win = TranslatorWindow(matlab_path=FFT_MATLAB)
+        win.show()
+        win.details_button.click()
+        self.assertTrue(win.details_widget.isVisible())
+        win.details_button.click()
+        self.assertFalse(win.details_widget.isVisible())
         win.close()
 
     def test_style_green_above_90(self):
@@ -250,6 +270,33 @@ class TestAccuracyLabel(unittest.TestCase):
         self.assertEqual(accuracy_text(87), "Accuracy: 87%")
         self.assertEqual(accuracy_text(99.6), "Accuracy: 100%")
         self.assertEqual(accuracy_text(None), "Accuracy: --")
+
+
+class TestSummaryLineFunction(unittest.TestCase):
+    def test_clean_file_reports_full_summary(self):
+        from translator import translate_file
+
+        result = translate_file(FFT_MATLAB)
+        text = summary_line(result)
+        self.assertIn("lines translated", text)
+        self.assertIn("0 need review", text)
+        self.assertIn("accuracy 100%", text)
+        self.assertTrue(text.endswith("."))
+
+    def test_unresolved_file_reports_review_count(self):
+        from unittest import mock
+
+        from translator import translate_file
+
+        with mock.patch(
+            "assistant.draft_translation._call_ollama", return_value=FAKE_RESPONSE
+        ):
+            result = translate_file(
+                sample_python("beamform_basic_py.py"), direction=PYTHON_TO_MATLAB
+            )
+        text = summary_line(result)
+        self.assertIn("need review", text)
+        self.assertNotIn("accuracy 100%", text)
 
 
 class TestReportText(unittest.TestCase):
