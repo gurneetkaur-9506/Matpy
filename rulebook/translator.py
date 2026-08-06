@@ -1,9 +1,14 @@
+import ast
 import re
 
 from .builtin_rules import BUILTIN_RULES, apply_builtin_rule, apply_builtin_rule_reverse
 from .complex_rules import apply_complex_rule
 from .indexing_rules import apply_indexing_rule, apply_indexing_rule_reverse
-from .operator_rules import _find_last_operator, apply_operator_rule_reverse
+from .operator_rules import (
+    _find_last_operator,
+    apply_operator_rule_reverse,
+    is_scalar_like,
+)
 
 UNRESOLVED = "UNRESOLVED"
 
@@ -98,6 +103,54 @@ def _is_index_like(arg):
     return ":" in arg
 
 
+def _split_range(expr):
+    return [p for p in _split_top_level(expr, ":") if p.strip()]
+
+
+def _valid_python(expr):
+    try:
+        ast.parse(expr)
+        return True
+    except SyntaxError:
+        return False
+
+
+def _translate_range_part(part):
+    part = part.strip()
+    if not part:
+        return UNRESOLVED
+    translated = _translate_expr(part)
+    if translated != UNRESOLVED and "length(" not in translated and _valid_python(translated):
+        return translated
+    return apply_indexing_rule(part)
+
+
+_LINSPACE_STEP = re.compile(
+    r"^\s*\(?\s*1\s*/\s*\(\s*length\s*\(\s*([A-Za-z_][A-Za-z0-9_]*)\s*\)\s*-\s*1\s*\)\s*\)?\s*$"
+)
+
+
+def _linspace_count(step_part):
+    match = _LINSPACE_STEP.fullmatch(step_part)
+    if match:
+        return "len(%s)" % match.group(1)
+    return None
+
+
+def _translate_range(parts):
+    translated = [_translate_range_part(p) for p in parts]
+    if any(t == UNRESOLVED for t in translated):
+        return UNRESOLVED
+    if len(parts) == 2:
+        return "np.arange(%s, %s + 1)" % (translated[0], translated[1])
+    if len(parts) == 3:
+        count = _linspace_count(parts[1])
+        if count is not None:
+            return "np.linspace(%s, %s, %s)" % (translated[0], translated[2], count)
+        return "np.arange(%s, %s, %s)" % (translated[0], translated[2], translated[1])
+    return UNRESOLVED
+
+
 def _translate_expr(expr):
     expr = expr.strip()
     if not expr:
@@ -106,6 +159,10 @@ def _translate_expr(expr):
         return _translate_matrix(expr)
     if len(expr) >= 2 and expr[0] == expr[-1] == "'":
         return expr
+
+    range_parts = _split_range(expr)
+    if len(range_parts) >= 2:
+        return _translate_range(range_parts)
 
     call = _split_call(expr)
     if call is not None:
@@ -155,7 +212,11 @@ def _translate_expr(expr):
         return UNRESOLVED
 
     if op == "*":
-        return "%s @ %s" % (left_py, right_py)
+        if not is_scalar_like(expr[:idx]) and not is_scalar_like(
+            expr[idx + len(op):]
+        ):
+            return "%s @ %s" % (left_py, right_py)
+        return "%s * %s" % (left_py, right_py)
     if op == ".*":
         return "%s * %s" % (left_py, right_py)
     if op == "./":
@@ -214,7 +275,10 @@ def _translate_loop(stmt):
     if ":" not in converted:
         return {"kind": "loop", "source": header, "python": UNRESOLVED}
     start, stop = converted.split(":", 1)
-    loop_py = "for %s in range(%s, %s):" % (var.strip(), start, stop)
+    if start == "0":
+        loop_py = "for %s in range(%s):" % (var.strip(), stop)
+    else:
+        loop_py = "for %s in range(%s, %s):" % (var.strip(), start, stop)
     return {
         "kind": "loop",
         "source": header,
@@ -267,15 +331,102 @@ def _translate_statement(stmt):
     return {"kind": stmt.kind, "source": stmt.text, "python": UNRESOLVED}
 
 
+_PLAIN_ASSIGN_TARGET = re.compile(r"^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*")
+_INDEXED_ASSIGN = re.compile(r"^\s*([A-Za-z_][A-Za-z0-9_]*)\s*\((.*?)\)\s*=\s*(.*)$")
+_INDEXED_REF = re.compile(r"([A-Za-z_][A-Za-z0-9_]*)\s*\((.*?)\)")
+
+
+def _is_loop(stmt):
+    return not hasattr(stmt, "kind")
+
+
+def _loop_variable(loop):
+    return loop.header.split("=", 1)[0].strip()
+
+
+def _declare_target(text):
+    match = _PLAIN_ASSIGN_TARGET.match(text)
+    return match.group(1) if match else None
+
+
+def _indexed_reference_matrix(loop, var, target, declared):
+    for body_stmt in loop.statements:
+        if not hasattr(body_stmt, "kind"):
+            continue
+        for match in _INDEXED_REF.finditer(body_stmt.text):
+            name = match.group(1)
+            if name == target:
+                continue
+            index_tokens = [t.strip() for t in match.group(2).split(",")]
+            if var in index_tokens and name in declared:
+                return name
+    return None
+
+
+def _build_preallocate(target, ref_matrix):
+    if ref_matrix:
+        return {
+            "kind": "preallocate",
+            "source": "%s(...) = ... (implicit array growth)" % target,
+            "python": "%s = np.zeros_like(%s)" % (target, ref_matrix),
+            "comment": (
+                "# MATLAB: %s(...) = ... (implicit array growth) -> Python: "
+                "preallocate once, same shape as %s" % (target, ref_matrix)
+            ),
+        }
+    return {
+        "kind": "preallocate",
+        "source": "%s(...) = ... (implicit array growth)" % target,
+        "python": "%s = np.zeros(0)" % target,
+        "comment": (
+            "# MATLAB: %s(...) = ... (implicit array growth) -> Python: "
+            "preallocate (shape unresolved)" % target
+        ),
+    }
+
+
+def _preallocations_for_loop(loop, declared):
+    var = _loop_variable(loop)
+    if not var:
+        return []
+    preallocations = []
+    for body_stmt in loop.statements:
+        if not hasattr(body_stmt, "kind") or body_stmt.kind != "assignment":
+            continue
+        match = _INDEXED_ASSIGN.match(body_stmt.text)
+        if not match:
+            continue
+        target = match.group(1)
+        index_tokens = [t.strip() for t in match.group(2).split(",")]
+        if target in declared or var not in index_tokens:
+            continue
+        ref_matrix = _indexed_reference_matrix(loop, var, target, declared)
+        preallocations.append(_build_preallocate(target, ref_matrix))
+    return preallocations
+
+
+def _translate_function(func):
+    declared = set(func.parameters)
+    translated = []
+    for stmt in func.statements:
+        if _is_loop(stmt):
+            translated.extend(_preallocations_for_loop(stmt, declared))
+        translated.append(_translate_statement(stmt))
+        target = _declare_target(stmt.text) if hasattr(stmt, "kind") else None
+        if target:
+            declared.add(target)
+    return {
+        "name": func.name,
+        "parameters": list(func.parameters),
+        "outputs": list(func.outputs),
+        "statements": translated,
+    }
+
+
 def translate_with_rulebook(structure):
     result = {"functions": [], "statements": []}
     for func in structure.functions:
-        result["functions"].append(
-            {
-                "name": func.name,
-                "statements": [_translate_statement(s) for s in func.statements],
-            }
-        )
+        result["functions"].append(_translate_function(func))
     for stmt in structure.statements:
         result["statements"].append(_translate_statement(stmt))
     return result
@@ -429,6 +580,7 @@ def translate_with_rulebook_reverse(structure):
         result["functions"].append(
             {
                 "name": func.name,
+                "parameters": list(func.parameters),
                 "statements": [
                     _translate_statement_reverse(s) for s in func.statements
                 ],

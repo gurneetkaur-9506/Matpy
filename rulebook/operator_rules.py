@@ -26,6 +26,65 @@ for _rule in OPERATOR_RULES.values():
 
 _TWO_CHAR_OPS = {".*", "./"}
 
+_SCALAR_RE = re.compile(r"^[-+]?(?:\d+(?:\.\d+)?|\.\d+)(?:[eE][+-]?\d+)?$")
+_IMAG_SCALAR_RE = re.compile(r"^[-+]?(?:\d+(?:\.\d+)?|\.\d+)(?:[eE][+-]?\d+)?i$")
+_SCALAR_CONSTANTS = {"pi", "e"}
+_SCALAR_FUNCTIONS = {"length", "numel", "len"}
+
+
+def _split_call_args(expr):
+    match = re.match(r"^([A-Za-z_][A-Za-z0-9_]*)\s*\(", expr)
+    if not match:
+        return None
+    start = match.end() - 1
+    depth = 0
+    for i in range(start, len(expr)):
+        if expr[i] == "(":
+            depth += 1
+        elif expr[i] == ")":
+            depth -= 1
+            if depth == 0:
+                if expr[i + 1:].strip() == "":
+                    return match.group(1), expr[start + 1:i]
+                return None
+    return None
+
+
+def is_scalar_like(expr):
+    expr = expr.strip()
+    if not expr:
+        return True
+    if _SCALAR_RE.fullmatch(expr) or _IMAG_SCALAR_RE.fullmatch(expr):
+        return True
+    if expr in _SCALAR_CONSTANTS:
+        return True
+    if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", expr):
+        return False
+
+    call = _split_call_args(expr)
+    if call is not None:
+        name, argtext = call
+        args = [a.strip() for a in argtext.split(",") if a.strip()] if argtext else []
+        if name in _SCALAR_FUNCTIONS:
+            return True
+        if not args:
+            return False
+        if any(a == ":" for a in args):
+            return False
+        return all(is_scalar_like(a) for a in args)
+
+    depth = 0
+    for i, ch in enumerate(expr):
+        if ch in "([":
+            depth += 1
+        elif ch in ")]":
+            depth -= 1
+        elif depth == 0 and ch in "+-*/":
+            if ch == "-" and (i == 0 or expr[i - 1] in "+-*/"):
+                continue
+            return is_scalar_like(expr[:i]) and is_scalar_like(expr[i + 1:])
+    return False
+
 
 def _find_last_operator(expr):
     depth = 0
@@ -67,7 +126,11 @@ def apply_operator_rule(expr):
     right = apply_operator_rule(expr[idx + len(op):])
 
     if op == "*":
-        return "%s @ %s" % (left, right)
+        if not is_scalar_like(expr[:idx]) and not is_scalar_like(
+            expr[idx + len(op):]
+        ):
+            return "%s @ %s" % (left, right)
+        return "%s * %s" % (left, right)
     if op == ".*":
         return "%s * %s" % (left, right)
     if op == "./":

@@ -35,6 +35,8 @@ class Function:
     loops: list = field(default_factory=list)
     refs: list = field(default_factory=list)
     indices: list = field(default_factory=list)
+    parameters: list = field(default_factory=list)
+    outputs: list = field(default_factory=list)
 
 
 @dataclass
@@ -109,6 +111,10 @@ def _py_collect_for(node):
     return _split_refs(entries)
 
 
+def _py_function_parameters(func):
+    return [a.arg for a in func.args.args]
+
+
 def _build_python_structure(tree):
     structure = Structure()
 
@@ -117,7 +123,14 @@ def _build_python_structure(tree):
             statements = _py_statements_from_body(child.body)
             plains, indices = _py_collect_for(child)
             structure.functions.append(
-                Function(child.name, statements, _flatten_loops(statements), plains, indices)
+                Function(
+                    child.name,
+                    statements,
+                    _flatten_loops(statements),
+                    plains,
+                    indices,
+                    _py_function_parameters(child),
+                )
             )
         else:
             structure.statements.append(
@@ -133,6 +146,26 @@ def _build_python_structure(tree):
     return structure
 
 
+def _matlab_function_parameters(arguments_node):
+    if arguments_node is None:
+        return []
+    return [
+        c.text.decode("utf-8")
+        for c in arguments_node.children
+        if c.type == "identifier"
+    ]
+
+
+def _matlab_function_outputs(output_node):
+    if output_node is None:
+        return []
+    return [
+        c.text.decode("utf-8")
+        for c in output_node.children
+        if c.type == "identifier"
+    ]
+
+
 def build_structure(parse_tree):
     if isinstance(parse_tree, ast.AST):
         return _build_python_structure(parse_tree)
@@ -145,15 +178,29 @@ def build_structure(parse_tree):
         if child.type == "function_definition":
             name = None
             block = None
+            arguments = None
+            outputs = None
             for c in child.children:
                 if name is None and c.type == "identifier":
                     name = c.text.decode("utf-8")
+                elif c.type == "function_arguments":
+                    arguments = c
+                elif c.type == "function_output":
+                    outputs = c
                 elif c.type == "block":
                     block = c
             statements = _statements_from_container(block)
             plains, indices = _collect_for(block)
             structure.functions.append(
-                Function(name, statements, _flatten_loops(statements), plains, indices)
+                Function(
+                    name,
+                    statements,
+                    _flatten_loops(statements),
+                    plains,
+                    indices,
+                    _matlab_function_parameters(arguments),
+                    _matlab_function_outputs(outputs),
+                )
             )
         else:
             structure.statements.append(Statement(child.type, child.text.decode("utf-8")))

@@ -172,6 +172,7 @@ def _extract_python(tree):
             functions.append(
                 {
                     "name": child.name,
+                    "parameters": [a.arg for a in child.args.args],
                     "body": "\n".join(ast.unparse(s) for s in child.body),
                     "loops": loops,
                     "refs": function_refs,
@@ -195,9 +196,12 @@ def extract_structure(parse_tree):
             body = None
             loops = []
             block = None
+            arguments = None
             for c in child.children:
                 if name is None and c.type == "identifier":
                     name = c.text.decode("utf-8")
+                elif c.type == "function_arguments":
+                    arguments = c
                 elif c.type == "block":
                     body = c.text.decode("utf-8")
                     block = c
@@ -208,6 +212,13 @@ def extract_structure(parse_tree):
             functions.append(
                 {
                     "name": name,
+                    "parameters": [
+                        a.text.decode("utf-8")
+                        for a in arguments.children
+                        if a.type == "identifier"
+                    ]
+                    if arguments is not None
+                    else [],
                     "body": body,
                     "loops": loops,
                     "refs": function_refs,

@@ -33,7 +33,22 @@ class TestApplyOperatorRule(unittest.TestCase):
         self.assertEqual(apply_operator_rule("A(1,:) .* B(2,:)"), "A(1,:) * B(2,:)")
 
     def test_decimal_number_not_elementwise(self):
-        self.assertEqual(apply_operator_rule("1.5 * x"), "1.5 @ x")
+        self.assertEqual(apply_operator_rule("1.5 * x"), "1.5 * x")
+        self.assertEqual(apply_operator_rule("a .* b"), "a * b")
+
+    def test_scalar_multiply_uses_plain_star(self):
+        self.assertEqual(apply_operator_rule("2 * xAxisStep"), "2 * xAxisStep")
+        self.assertEqual(apply_operator_rule("pi * x"), "pi * x")
+
+    def test_scalar_indexed_multiply_uses_plain_star(self):
+        self.assertEqual(
+            apply_operator_rule("2 * nonZeroXAxis(1) * xAxisStep"),
+            "2 * nonZeroXAxis(1) * xAxisStep",
+        )
+
+    def test_matrix_multiply_still_uses_at(self):
+        self.assertEqual(apply_operator_rule("a * b"), "a @ b")
+        self.assertEqual(apply_operator_rule("A * B * C"), "A @ B @ C")
 
     def test_no_operator_passthrough(self):
         self.assertEqual(apply_operator_rule("a + b"), "a + b")

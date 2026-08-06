@@ -54,7 +54,9 @@ def _emit_block(statements, lines, indent=""):
 
 def _emit_function(func, lines):
     lines.append("")
-    lines.append("def %s(*args, **kwargs):" % func["name"])
+    parameters = func.get("parameters") or ()
+    signature = ", ".join(parameters) if parameters else "*args, **kwargs"
+    lines.append("def %s(%s):" % (func["name"], signature))
     _emit_block(func["statements"], lines, indent="    ")
     draft = func.get("draft")
     if draft:
@@ -66,6 +68,12 @@ def _emit_function(func, lines):
         if draft["code"]:
             for line in draft["code"].splitlines():
                 lines.append("    " + line)
+    outputs = func.get("outputs") or ()
+    if outputs:
+        if len(outputs) == 1:
+            lines.append("    return %s" % outputs[0])
+        else:
+            lines.append("    return (%s)" % ", ".join(outputs))
 
 
 def code_for_result(result):
@@ -91,7 +99,11 @@ def _emit_block_reverse(statements, lines, indent=""):
 
 def _emit_function_reverse(func, lines):
     lines.append("")
-    lines.append("%% function %s(*args): signature unresolved" % func["name"])
+    parameters = func.get("parameters") or ()
+    if parameters:
+        lines.append("function %s(%s)" % (func["name"], ", ".join(parameters)))
+    else:
+        lines.append("%% function %s(*args): signature unresolved" % func["name"])
     _emit_block_reverse(func["statements"], lines, indent="    ")
     draft = func.get("draft")
     if draft:
