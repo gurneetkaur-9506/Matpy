@@ -87,32 +87,45 @@ def is_scalar_like(expr):
 
 
 def _find_last_operator(expr):
-    depth = 0
-    i = len(expr) - 1
-    while i >= 0:
-        ch = expr[i]
-        if ch in ")]":
-            depth += 1
-        elif ch in "([":
-            depth -= 1
-        elif depth == 0:
-            if ch in "*":
-                if i > 0 and expr[i - 1] == ".":
-                    return i - 1, ".*"
-                return i, "*"
-            if ch in "/":
-                if i > 0 and expr[i - 1] == ".":
-                    return i - 1, "./"
-                return i, "/"
-            if ch == "=" and i > 0 and expr[i - 1] == "~":
-                return i - 1, "~="
-            if ch in "+-":
-                j = i - 1
-                while j >= 0 and expr[j].isspace():
-                    j -= 1
-                if j >= 0 and (expr[j].isalnum() or expr[j] in ")]_."):
-                    return i, ch
-        i -= 1
+    def _find(chars):
+        depth = 0
+        i = len(expr) - 1
+        while i >= 0:
+            ch = expr[i]
+            if ch in ")]":
+                depth += 1
+            elif ch in "([":
+                depth -= 1
+            elif depth == 0:
+                if ch in chars:
+                    return i
+            i -= 1
+        return None
+
+    # Lowest precedence first: relational (~=), then additive (+/-), then
+    # multiplicative (* / .* ./). Splitting at the lowest-precedence operator
+    # keeps a + b * c grouped as a + (b * c), so scalar/matrix decisions are
+    # made on the true operands.
+    idx = _find("~=")
+    if idx is not None and idx > 0 and expr[idx - 1] == "~":
+        return idx - 1, "~="
+
+    idx = _find("+-")
+    if idx is not None:
+        j = idx - 1
+        while j >= 0 and expr[j].isspace():
+            j -= 1
+        if j >= 0 and (expr[j].isalnum() or expr[j] in ")]_."):
+            return idx, expr[idx]
+
+    idx = _find("*/")
+    if idx is not None:
+        if expr[idx] == "*" and idx > 0 and expr[idx - 1] == ".":
+            return idx - 1, ".*"
+        if expr[idx] == "/" and idx > 0 and expr[idx - 1] == ".":
+            return idx - 1, "./"
+        return idx, expr[idx]
+
     return None, None
 
 

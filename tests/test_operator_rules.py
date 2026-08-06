@@ -1,6 +1,7 @@
 import unittest
 
 from rulebook import apply_operator_rule
+from rulebook.operator_rules import _find_last_operator
 
 
 class TestApplyOperatorRule(unittest.TestCase):
@@ -39,6 +40,19 @@ class TestApplyOperatorRule(unittest.TestCase):
     def test_scalar_multiply_uses_plain_star(self):
         self.assertEqual(apply_operator_rule("2 * xAxisStep"), "2 * xAxisStep")
         self.assertEqual(apply_operator_rule("pi * x"), "pi * x")
+
+    def test_lowest_precedence_operator_split_for_scalar_check(self):
+        self.assertEqual(
+            _find_last_operator("sin(2*pi*f1*t) + 0.5*sin(2*pi*f2*t)"),
+            (15, "+"),
+        )
+        self.assertEqual(
+            _find_last_operator("0.5*sin(2*pi*f2*t)"), (3, "*")
+        )
+        self.assertEqual(
+            apply_operator_rule("0.5*sin(2*pi*f2*t)"),
+            "0.5 * sin(2*pi*f2*t)",
+        )
 
     def test_scalar_indexed_multiply_uses_plain_star(self):
         self.assertEqual(

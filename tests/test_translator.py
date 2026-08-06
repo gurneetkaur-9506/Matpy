@@ -66,6 +66,12 @@ class TestPlotBuiltins(unittest.TestCase):
         translations = [s["python"] for s in self.result["statements"]]
         self.assertNotIn(UNRESOLVED, translations)
 
+    def test_scalar_multiply_in_signal_mix_stays_plain_star(self):
+        translations = [s["python"] for s in self.result["statements"]]
+        self.assertIn(
+            "x = np.sin(2*pi*f1*t) + 0.5 * np.sin(2*pi*f2*t)", translations
+        )
+
 
 class TestLoopHandling(unittest.TestCase):
     @classmethod
