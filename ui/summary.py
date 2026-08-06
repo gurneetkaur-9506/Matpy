@@ -35,6 +35,24 @@ def summarize(result):
     }
 
 
+def status_counts(result):
+    rulebook = result["sections"].get("rulebook", {})
+    total = rulebook.get("total", 0)
+    unresolved = rulebook.get("unresolved", 0)
+    drafted = len(result["sections"].get("assistant", {}).get("drafted") or [])
+    checker = result["sections"].get("checker", {}).get("status", "skipped")
+    verified = total if checker == "verified" else 0
+    return total - unresolved, unresolved + drafted, verified
+
+
+def status_line(result):
+    auto, review, verified = status_counts(result)
+    return (
+        "%d lines translated automatically, %d need your review, %d verified yet"
+        % (auto, review, verified)
+    )
+
+
 def summarize_translation(paths=None, beamform_inputs=None):
     paths = paths or SAMPLE_FILES
     rows = []

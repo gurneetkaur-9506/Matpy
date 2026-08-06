@@ -1,15 +1,19 @@
 import os
 import sys
 
+from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import (
     QApplication,
     QComboBox,
+    QFileDialog,
     QHBoxLayout,
     QLabel,
     QMainWindow,
     QPlainTextEdit,
     QPushButton,
     QSplitter,
+    QStackedWidget,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -17,6 +21,8 @@ from PyQt5.QtWidgets import (
 from repo_paths import sample_matlab
 from reader import MATLAB_TO_PYTHON, PYTHON_TO_MATLAB
 from translator import translate_file
+from ui.highlight import ProblemLineHighlighter
+from ui.summary import status_line
 
 DEFAULT_MATLAB_PATH = sample_matlab("fft_basic.m")
 
@@ -76,11 +82,17 @@ class MinimalTranslatorWindow(QMainWindow):
         self.source_label = QLabel("Source: MATLAB")
         self.output_label = QLabel("Output: Python")
         self.python_pane = QPlainTextEdit()
+        self.python_highlighter = ProblemLineHighlighter(self.python_pane.document())
 
-        splitter = QSplitter()
-        splitter.addWidget(self.matlab_pane)
-        splitter.addWidget(self.python_pane)
-        splitter.setSizes([500, 500])
+        self.splitter = QSplitter()
+        self.splitter.addWidget(self.matlab_pane)
+        self.splitter.addWidget(self.python_pane)
+        self.splitter.setSizes([500, 500])
+
+        self.placeholder = self._build_placeholder()
+        self.stack = QStackedWidget()
+        self.stack.addWidget(self.placeholder)
+        self.stack.addWidget(self.splitter)
 
         self.translate_button = QPushButton("Translate")
         self.translate_button.clicked.connect(self._translate)
@@ -94,10 +106,9 @@ class MinimalTranslatorWindow(QMainWindow):
         self.direction_combo.currentIndexChanged.connect(self._on_direction_changed)
 
         buttons = QHBoxLayout()
-        buttons.addWidget(QLabel("Direction:"))
         buttons.addWidget(self.direction_combo)
-        buttons.addStretch(1)
         buttons.addWidget(self.translate_button)
+        buttons.addStretch(1)
         buttons.addWidget(self.save_button)
 
         pane_labels = QHBoxLayout()
@@ -105,32 +116,86 @@ class MinimalTranslatorWindow(QMainWindow):
         pane_labels.addStretch(1)
         pane_labels.addWidget(self.output_label)
 
+        self.status_line = QLabel("Not translated yet")
+        self.details_button = QToolButton()
+        self.details_button.setText("Details")
+        self.details_button.setCheckable(True)
+        self.details_button.setArrowType(Qt.RightArrow)
+        self.details_button.toggled.connect(self._toggle_details)
+
         self.section_labels = {}
-        sections_row = QHBoxLayout()
-        sections_row.addWidget(QLabel("Sections:"))
+        self.details_widget = QWidget()
+        details_row = QHBoxLayout()
+        details_row.addWidget(QLabel("Stage status:"))
         for stage in ("reader", "rulebook", "assistant", "checker"):
             label = QLabel("%s: pending" % stage.title())
             label.setStyleSheet(_MARKER_STYLE["pending"])
             self.section_labels[stage] = label
-            sections_row.addWidget(label)
-        sections_row.addStretch(1)
+            details_row.addWidget(label)
+        details_row.addStretch(1)
+        self.details_widget.setLayout(details_row)
+        self.details_widget.setVisible(False)
+
+        summary_row = QHBoxLayout()
+        summary_row.addWidget(self.status_line)
+        summary_row.addStretch(1)
+        summary_row.addWidget(self.details_button)
 
         central = QWidget()
         layout = QVBoxLayout()
         layout.addLayout(buttons)
-        layout.addLayout(sections_row)
+        layout.addLayout(summary_row)
+        layout.addWidget(self.details_widget)
         layout.addLayout(pane_labels)
-        layout.addWidget(splitter)
+        layout.addWidget(self.stack)
         central.setLayout(layout)
         self.setCentralWidget(central)
 
         self.statusBar().showMessage("Ready")
         if matlab_path:
             self.load_matlab(matlab_path)
+        else:
+            self.stack.setCurrentWidget(self.placeholder)
+
+    def _build_placeholder(self):
+        widget = QWidget()
+        layout = QVBoxLayout()
+        layout.addStretch(1)
+        message = QLabel("Open a MATLAB or Python file to translate it")
+        message.setAlignment(Qt.AlignCenter)
+        layout.addWidget(message)
+        open_button = QPushButton("Open")
+        open_button.clicked.connect(self._open_file)
+        button_row = QHBoxLayout()
+        button_row.addStretch(1)
+        button_row.addWidget(open_button)
+        button_row.addStretch(1)
+        layout.addLayout(button_row)
+        layout.addStretch(1)
+        widget.setLayout(layout)
+        return widget
+
+    def _open_file(self):
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Open file",
+            "",
+            "Source files (*.m *.py);;All files (*)",
+        )
+        if not path:
+            return
+        path = os.fspath(path)
+        if path.endswith(".py"):
+            index = self.direction_combo.findData(PYTHON_TO_MATLAB)
+        else:
+            index = self.direction_combo.findData(MATLAB_TO_PYTHON)
+        self.direction_combo.setCurrentIndex(index)
+        self.load_matlab(path)
 
     def load_matlab(self, path):
         self.matlab_path = path
         self.matlab_pane.setPlainText(_read_text(path))
+        self.stack.setCurrentWidget(self.splitter)
         self.setWindowTitle("MATPY Translator - %s" % path)
         self.statusBar().showMessage("Loaded %s" % path)
 
@@ -146,11 +211,16 @@ class MinimalTranslatorWindow(QMainWindow):
         self.source_label.setText("Source: Python" if reverse else "Source: MATLAB")
         self.output_label.setText("Output: MATLAB" if reverse else "Output: Python")
         self.python_pane.setPlainText("")
+        self.python_highlighter.set_problem_lines([])
 
     def _set_section_marker(self, stage, status):
         label = self.section_labels[stage]
         label.setText("%s: %s" % (stage.title(), status))
         label.setStyleSheet(_MARKER_STYLE[section_marker(status)])
+
+    def _toggle_details(self, checked):
+        self.details_widget.setVisible(checked)
+        self.details_button.setArrowType(Qt.DownArrow if checked else Qt.RightArrow)
 
     def _update_sections(self, sections):
         for stage, info in sections.items():
@@ -167,7 +237,9 @@ class MinimalTranslatorWindow(QMainWindow):
             self._set_section_marker("checker", "failed")
             return
         self.python_pane.setPlainText(result["python"])
+        self.python_highlighter.set_problem_lines(result.get("problems", []))
         self._update_sections(result["sections"])
+        self.status_line.setText(status_line(result))
         self.statusBar().showMessage(
             "Translated %s (status=%s)" % (self.matlab_path, result["status"])
         )

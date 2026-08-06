@@ -13,6 +13,20 @@ from ui.translator_window import TranslatorWindow
 FFT_MATLAB = sample_matlab("fft_basic.m")
 INDEXING_PYTHON = sample_python("indexing_ops_py.py")
 
+FAKE_RESPONSE = """CODE
+import numpy as np
+
+def f(x):
+    return np.sum(x)
+END CODE
+CONFIDENCE
+0.6
+END CONFIDENCE
+UNSURE
+- assumed x is 1-D
+END UNSURE
+"""
+
 
 class TestTranslatorWindow(unittest.TestCase):
     @classmethod
@@ -103,6 +117,89 @@ class TestTranslatorWindow(unittest.TestCase):
         output = win.python_pane.toPlainText()
         self.assertIn("import numpy as np", output)
         self.assertIn("plt.plot(f, P1)", output)
+        win.close()
+
+    def test_highlighter_applies_background_on_problem_lines(self):
+        from PyQt5.QtGui import QTextDocument
+
+        from ui.highlight import ProblemLineHighlighter
+
+        doc = QTextDocument()
+        doc.setPlainText("clean\n# UNRESOLVED: x = find(a, b)\n")
+        highlighter = ProblemLineHighlighter(doc, problem_lines=[1])
+        highlighter.rehighlight()
+        self.app.processEvents()
+        block = doc.findBlockByNumber(1)
+        fmts = block.layout().formats()
+        self.assertTrue(fmts)
+        self.assertEqual(fmts[0].format.background().color().name(), "#ffeb3b")
+
+    def test_highlighter_empty_when_fully_resolved(self):
+        win = TranslatorWindow(matlab_path=FFT_MATLAB)
+        win.translate_button.click()
+        self.assertEqual(win.python_highlighter._problem_lines, set())
+        win.close()
+
+    def test_highlighter_marks_problem_lines_after_translate(self):
+        from unittest import mock
+
+        win = TranslatorWindow(matlab_path=sample_python("beamform_basic_py.py"))
+        reverse_index = win.direction_combo.findData(PYTHON_TO_MATLAB)
+        win.direction_combo.setCurrentIndex(reverse_index)
+        with mock.patch(
+            "assistant.draft_translation._call_ollama", return_value=FAKE_RESPONSE
+        ):
+            win.translate_button.click()
+        self.assertTrue(win.python_highlighter._problem_lines)
+        win.close()
+
+    def test_empty_state_shows_placeholder_message_and_open_button(self):
+        from PyQt5.QtWidgets import QLabel, QPushButton
+
+        win = TranslatorWindow()
+        self.assertIs(win.stack.currentWidget(), win.placeholder)
+        messages = [w.text() for w in win.placeholder.findChildren(QLabel)]
+        self.assertIn("Open a MATLAB or Python file to translate it", messages)
+        buttons = win.placeholder.findChildren(QPushButton)
+        self.assertEqual(len(buttons), 1)
+        self.assertEqual(buttons[0].text(), "Open")
+        win.close()
+
+    def test_loaded_state_shows_splitter(self):
+        win = TranslatorWindow(matlab_path=FFT_MATLAB)
+        self.assertIs(win.stack.currentWidget(), win.splitter)
+        win.close()
+
+    def test_open_python_file_sets_reverse_direction_and_loads(self):
+        from unittest import mock
+
+        from PyQt5.QtWidgets import QPushButton
+
+        win = TranslatorWindow()
+        with mock.patch(
+            "ui.translator_window.QFileDialog.getOpenFileName",
+            return_value=(INDEXING_PYTHON, ""),
+        ):
+            win.placeholder.findChildren(QPushButton)[0].click()
+        self.assertIs(win.stack.currentWidget(), win.splitter)
+        self.assertEqual(win.current_direction(), PYTHON_TO_MATLAB)
+        self.assertIn("A = np.array", win.matlab_pane.toPlainText())
+        win.close()
+
+    def test_open_matlab_file_keeps_forward_direction_and_loads(self):
+        from unittest import mock
+
+        from PyQt5.QtWidgets import QPushButton
+
+        win = TranslatorWindow()
+        with mock.patch(
+            "ui.translator_window.QFileDialog.getOpenFileName",
+            return_value=(FFT_MATLAB, ""),
+        ):
+            win.placeholder.findChildren(QPushButton)[0].click()
+        self.assertIs(win.stack.currentWidget(), win.splitter)
+        self.assertEqual(win.current_direction(), MATLAB_TO_PYTHON)
+        self.assertIn("fs = 1000;", win.matlab_pane.toPlainText())
         win.close()
 
 

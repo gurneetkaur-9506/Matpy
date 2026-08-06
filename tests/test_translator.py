@@ -128,6 +128,35 @@ class TestFindAndInterp1Rules(unittest.TestCase):
         self.assertEqual(self._translate("y = interp1(x, v)"), UNRESOLVED)
 
 
+class TestProblemLineCollection(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        parser = Parser(Language(language()))
+        tree = parser.parse(
+            load_matlab_file(sample_matlab("fft_basic.m")).encode("utf-8")
+        )
+        cls.result = translate_with_rulebook(build_structure(tree))
+
+    def test_fully_resolved_file_has_no_problems(self):
+        from translator import code_for_result
+
+        problems = []
+        code_for_result(self.result, problems=problems)
+        self.assertEqual(problems, [])
+
+    def test_unresolved_lines_recorded(self):
+        from translator import code_for_result
+
+        structure = Structure(statements=[Statement("assignment", "x = find(a, b)")])
+        problems = []
+        code = code_for_result(translate_with_rulebook(structure), problems=problems)
+        self.assertIn("# UNRESOLVED:", code)
+        unresolved_index = next(
+            i for i, line in enumerate(code.splitlines()) if "UNRESOLVED" in line
+        )
+        self.assertIn(unresolved_index, problems)
+
+
 class TestAtlasDisplayResolves(unittest.TestCase):
     @classmethod
     def setUpClass(cls):

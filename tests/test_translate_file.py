@@ -102,5 +102,26 @@ class TestTranslateFile(unittest.TestCase):
         self.assertIn("% UNRESOLVED: n = np.arange(N)", result["python"])
 
 
+    def test_forward_problem_lines_empty(self):
+        result = translate_file(sample_matlab("indexing_ops.m"))
+        self.assertEqual(result["problems"], [])
+
+    @mock.patch("assistant.draft_translation._call_ollama", return_value=FAKE_RESPONSE)
+    def test_reverse_problem_lines_include_unresolved(self, mock_call):
+        result = translate_file(
+            sample_python("beamform_basic_py.py"),
+            direction=PYTHON_TO_MATLAB,
+        )
+        self.assertIn(
+            "% UNRESOLVED: n = np.arange(N)", result["python"]
+        )
+        unresolved_index = next(
+            i
+            for i, line in enumerate(result["python"].splitlines())
+            if "UNRESOLVED: n = np.arange(N)" in line
+        )
+        self.assertIn(unresolved_index, result["problems"])
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -13,6 +13,9 @@ from specialist_lib import __all__ as SPECIALIST_NAMES
 import specialist_lib
 
 
+LOW_CONFIDENCE = 0.5
+
+
 def _specialist_lib_contents():
     return {
         name: inspect.getsource(getattr(specialist_lib, name))
@@ -24,40 +27,28 @@ def _parse(path, direction):
     return load_structure(path, direction)
 
 
-def _emit_block(statements, lines, indent=""):
-    dropped = []
+def _emit_block(statements, lines, indent="", problems=None):
     for stmt in statements:
         if stmt["kind"] == "command" and not stmt["python"]:
-            dropped.append(stmt["source"])
             continue
-        if dropped:
-            lines.append(
-                indent
-                + "# MATLAB: %s -> Python: re-initialize state (no-op here)"
-                % "; ".join(dropped)
-            )
-            dropped = []
         if stmt["python"] == UNRESOLVED:
+            if problems is not None:
+                problems.append(len(lines))
             lines.append(indent + "# UNRESOLVED: %s" % stmt["source"])
             continue
-        lines.append(indent + stmt["comment"])
         lines.append(indent + stmt["python"])
         if stmt["kind"] == "loop":
-            _emit_block(stmt.get("body", []), lines, indent=indent + "    ")
-    if dropped:
-        lines.append(
-            indent
-            + "# MATLAB: %s -> Python: re-initialize state (no-op here)"
-            % "; ".join(dropped)
-        )
+            _emit_block(
+                stmt.get("body", []), lines, indent=indent + "    ", problems=problems
+            )
 
 
-def _emit_function(func, lines):
+def _emit_function(func, lines, problems=None):
     lines.append("")
     parameters = func.get("parameters") or ()
     signature = ", ".join(parameters) if parameters else "*args, **kwargs"
     lines.append("def %s(%s):" % (func["name"], signature))
-    _emit_block(func["statements"], lines, indent="    ")
+    _emit_block(func["statements"], lines, indent="    ", problems=problems)
     draft = func.get("draft")
     if draft:
         notes = "; ".join(draft["notes"]) if draft["notes"] else "none"
@@ -65,9 +56,14 @@ def _emit_function(func, lines):
             "    # Assistant draft: confidence=%.2f notes=%s"
             % (draft["confidence"], notes)
         )
+        low_confidence = problems is not None and draft["confidence"] < LOW_CONFIDENCE
+        if low_confidence:
+            problems.append(len(lines) - 1)
         if draft["code"]:
             for line in draft["code"].splitlines():
                 lines.append("    " + line)
+                if low_confidence:
+                    problems.append(len(lines) - 1)
     outputs = func.get("outputs") or ()
     if outputs:
         if len(outputs) == 1:
@@ -76,35 +72,35 @@ def _emit_function(func, lines):
             lines.append("    return (%s)" % ", ".join(outputs))
 
 
-def code_for_result(result):
+def code_for_result(result, problems=None):
     lines = ["import numpy as np", ""]
-    _emit_block(result["statements"], lines)
+    _emit_block(result["statements"], lines, problems=problems)
     for func in result["functions"]:
-        _emit_function(func, lines)
+        _emit_function(func, lines, problems=problems)
     return "\n".join(lines) + "\n"
 
 
-def _emit_block_reverse(statements, lines, indent=""):
+def _emit_block_reverse(statements, lines, indent="", problems=None):
     for stmt in statements:
         matlab = stmt.get("matlab")
         if matlab == UNRESOLVED:
+            if problems is not None:
+                problems.append(len(lines))
             lines.append(indent + "%% UNRESOLVED: %s" % stmt["source"])
             continue
         if not matlab:
             continue
-        if stmt.get("comment"):
-            lines.append(indent + stmt["comment"])
         lines.append(indent + matlab + ";")
 
 
-def _emit_function_reverse(func, lines):
+def _emit_function_reverse(func, lines, problems=None):
     lines.append("")
     parameters = func.get("parameters") or ()
     if parameters:
         lines.append("function %s(%s)" % (func["name"], ", ".join(parameters)))
     else:
         lines.append("%% function %s(*args): signature unresolved" % func["name"])
-    _emit_block_reverse(func["statements"], lines, indent="    ")
+    _emit_block_reverse(func["statements"], lines, indent="    ", problems=problems)
     draft = func.get("draft")
     if draft:
         notes = "; ".join(draft["notes"]) if draft["notes"] else "none"
@@ -112,16 +108,21 @@ def _emit_function_reverse(func, lines):
             "    %% Assistant draft: confidence=%.2f notes=%s"
             % (draft["confidence"], notes)
         )
+        low_confidence = problems is not None and draft["confidence"] < LOW_CONFIDENCE
+        if low_confidence:
+            problems.append(len(lines) - 1)
         if draft["code"]:
             for line in draft["code"].splitlines():
                 lines.append("    " + line)
+                if low_confidence:
+                    problems.append(len(lines) - 1)
 
 
-def code_for_result_reverse(result):
+def code_for_result_reverse(result, problems=None):
     lines = []
-    _emit_block_reverse(result["statements"], lines)
+    _emit_block_reverse(result["statements"], lines, problems=problems)
     for func in result["functions"]:
-        _emit_function_reverse(func, lines)
+        _emit_function_reverse(func, lines, problems=problems)
     return "\n".join(lines) + "\n"
 
 
@@ -178,11 +179,13 @@ def translate_file(
         "drafted": drafted,
     }
 
+    problems = []
     result["python"] = (
-        code_for_result_reverse(rulebook_result)
+        code_for_result_reverse(rulebook_result, problems=problems)
         if reverse
-        else code_for_result(rulebook_result)
+        else code_for_result(rulebook_result, problems=problems)
     )
+    result["problems"] = problems
 
     if not inputs:
         result["sections"]["checker"] = {
