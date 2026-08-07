@@ -3,6 +3,7 @@ import re
 
 from .builtin_rules import BUILTIN_RULES, apply_builtin_rule, apply_builtin_rule_reverse
 from .complex_rules import apply_complex_rule
+from .format_rules import convert_fprintf
 from .indexing_rules import apply_indexing_rule, apply_indexing_rule_reverse
 from .operator_rules import (
     _find_last_operator,
@@ -219,6 +220,11 @@ def _translate_expr(expr, scalars=None):
             if any(t == UNRESOLVED for t in translated):
                 return UNRESOLVED
             return "print(%s)" % ", ".join(translated)
+        if name == "fprintf":
+            converted = convert_fprintf(expr, lambda a: _translate_expr(a, scalars))
+            if converted is not None:
+                return converted
+            return UNRESOLVED
         if name in BUILTIN_RULES:
             return apply_builtin_rule(expr)
         if name in _PLOT_BUILTINS:

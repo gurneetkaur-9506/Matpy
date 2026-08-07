@@ -62,6 +62,27 @@ class TestApplyBuiltinRule(unittest.TestCase):
         self.assertEqual(apply_builtin_rule("log(x)"), "np.log(x)")
         self.assertEqual(apply_builtin_rule("log(abs(Y))"), "np.log(np.abs(Y))")
 
+    def test_round(self):
+        self.assertEqual(apply_builtin_rule("round(x)"), "np.round(x)")
+        self.assertEqual(apply_builtin_rule("round(x, 2)"), "np.round(x, 2)")
+
+    def test_floor(self):
+        self.assertEqual(apply_builtin_rule("floor(x)"), "np.floor(x)")
+        self.assertEqual(apply_builtin_rule("floor(2.7)"), "np.floor(2.7)")
+
+    def test_ceil(self):
+        self.assertEqual(apply_builtin_rule("ceil(x)"), "np.ceil(x)")
+        self.assertEqual(apply_builtin_rule("ceil(2.1)"), "np.ceil(2.1)")
+
+    def test_fix(self):
+        self.assertEqual(apply_builtin_rule("fix(x)"), "np.trunc(x)")
+        self.assertEqual(apply_builtin_rule("fix(-2.7)"), "np.trunc(-2.7)")
+
+    def test_rounding_nested(self):
+        self.assertEqual(apply_builtin_rule("floor(abs(x))"), "np.floor(np.abs(x))")
+        self.assertEqual(apply_builtin_rule("round(ceil(x))"), "np.round(np.ceil(x))")
+        self.assertEqual(apply_builtin_rule("fix(size(m))"), "np.trunc(m.shape)")
+
     def test_unknown_call_passthrough(self):
         self.assertEqual(apply_builtin_rule("myfunc(x)"), "myfunc(x)")
 
