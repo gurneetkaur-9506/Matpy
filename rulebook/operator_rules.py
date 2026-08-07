@@ -149,6 +149,12 @@ def apply_operator_rule(expr):
     if op == "./":
         return "%s / %s" % (left, right)
     if op == "/":
+        # MATLAB '/' is matrix right-division (solve a * x = b) ONLY when
+        # both operands are arrays; dividing by a scalar (a count like
+        # length(P2), a literal, or a scalar variable) is element-wise and
+        # maps to plain Python '/'.
+        if is_scalar_like(expr[:idx]) or is_scalar_like(expr[idx + len(op):]):
+            return "%s / %s" % (left, right)
         template = OPERATOR_RULES["matrix_right_divide"]["python"]
         return template % (right, left)
     return expr

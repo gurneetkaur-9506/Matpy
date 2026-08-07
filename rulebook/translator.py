@@ -115,11 +115,11 @@ def _valid_python(expr):
         return False
 
 
-def _translate_range_part(part):
+def _translate_range_part(part, scalars=None):
     part = part.strip()
     if not part:
         return UNRESOLVED
-    translated = _translate_expr(part)
+    translated = _translate_expr(part, scalars)
     if translated != UNRESOLVED and "length(" not in translated and _valid_python(translated):
         return translated
     return apply_indexing_rule(part)
@@ -129,6 +129,46 @@ _LINSPACE_STEP = re.compile(
     r"^\s*\(?\s*1\s*/\s*\(\s*length\s*\(\s*([A-Za-z_][A-Za-z0-9_]*)\s*\)\s*-\s*1\s*\)\s*\)?\s*$"
 )
 
+_IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+def _is_scalar(expr, scalars):
+    """True when ``expr`` is a scalar: a literal, a scalar-producing call
+    (length/numel/...), or a variable previously assigned a scalar value."""
+    expr = expr.strip()
+    if scalars and _IDENTIFIER.fullmatch(expr) and expr in scalars:
+        return True
+    return is_scalar_like(expr)
+
+
+def _inclusive_stop(expr):
+    """Build the exclusive stop for np.arange() from an inclusive MATLAB
+    endpoint: 'b' becomes 'b + 1', but a trailing '- 1' cancels it, so
+    'len(P1) - 1' stays 'len(P1)' instead of 'len(P1) - 1 + 1'."""
+    stripped = expr.strip()
+    while stripped.startswith("(") and stripped.endswith(")"):
+        stripped = stripped[1:-1].strip()
+    match = re.fullmatch(r"(.*) - 1", stripped)
+    if match and match.group(1).strip():
+        return match.group(1)
+    return "%s + 1" % expr
+
+
+def _outer_parens_wrap(expr):
+    """True when ``expr`` is wrapped in one pair of matching parentheses
+    that span the whole expression (so they can be dropped safely)."""
+    if not (expr.startswith("(") and expr.endswith(")")):
+        return False
+    depth = 0
+    for i, ch in enumerate(expr):
+        if ch == "(":
+            depth += 1
+        elif ch == ")":
+            depth -= 1
+            if depth == 0 and i < len(expr) - 1:
+                return False
+    return depth == 0
+
 
 def _linspace_count(step_part):
     match = _LINSPACE_STEP.fullmatch(step_part)
@@ -137,12 +177,12 @@ def _linspace_count(step_part):
     return None
 
 
-def _translate_range(parts):
-    translated = [_translate_range_part(p) for p in parts]
+def _translate_range(parts, scalars=None):
+    translated = [_translate_range_part(p, scalars) for p in parts]
     if any(t == UNRESOLVED for t in translated):
         return UNRESOLVED
     if len(parts) == 2:
-        return "np.arange(%s, %s + 1)" % (translated[0], translated[1])
+        return "np.arange(%s, %s)" % (translated[0], _inclusive_stop(translated[1]))
     if len(parts) == 3:
         count = _linspace_count(parts[1])
         if count is not None:
@@ -151,7 +191,7 @@ def _translate_range(parts):
     return UNRESOLVED
 
 
-def _translate_expr(expr):
+def _translate_expr(expr, scalars=None):
     expr = expr.strip()
     if not expr:
         return ""
@@ -160,22 +200,29 @@ def _translate_expr(expr):
     if len(expr) >= 2 and expr[0] == expr[-1] == "'":
         return expr
 
+    # Drop redundant outer parentheses so parenthesized ranges like
+    # (0:(length(P1)-1)) are translated as ranges, not passed through.
+    # Re-wrap the result so operator precedence is preserved in context.
+    if _outer_parens_wrap(expr):
+        inner = _translate_expr(expr[1:-1], scalars)
+        return UNRESOLVED if inner == UNRESOLVED else "(%s)" % inner
+
     range_parts = _split_range(expr)
     if len(range_parts) >= 2:
-        return _translate_range(range_parts)
+        return _translate_range(range_parts, scalars)
 
     call = _split_call(expr)
     if call is not None:
         name, argtext = call
         if name == "disp":
-            translated = [_translate_expr(a) for a in _split_top_level(argtext, ",")]
+            translated = [_translate_expr(a, scalars) for a in _split_top_level(argtext, ",")]
             if any(t == UNRESOLVED for t in translated):
                 return UNRESOLVED
             return "print(%s)" % ", ".join(translated)
         if name in BUILTIN_RULES:
             return apply_builtin_rule(expr)
         if name in _PLOT_BUILTINS:
-            translated = [_translate_expr(a) for a in _split_top_level(argtext, ",")]
+            translated = [_translate_expr(a, scalars) for a in _split_top_level(argtext, ",")]
             if any(t == UNRESOLVED for t in translated):
                 return UNRESOLVED
             return "%s(%s)" % (_PLOT_BUILTINS[name], ", ".join(translated))
@@ -185,7 +232,7 @@ def _translate_expr(expr):
             args = _split_top_level(argtext, ",")
             if len(args) != 1:
                 return UNRESOLVED
-            cond = _translate_expr(args[0])
+            cond = _translate_expr(args[0], scalars)
             if cond == UNRESOLVED:
                 return UNRESOLVED
             return "np.where(%s)[0]" % cond
@@ -193,7 +240,7 @@ def _translate_expr(expr):
             args = _split_top_level(argtext, ",")
             if len(args) != 3:
                 return UNRESOLVED
-            translated = [_translate_expr(a) for a in args]
+            translated = [_translate_expr(a, scalars) for a in args]
             if any(t == UNRESOLVED for t in translated):
                 return UNRESOLVED
             return "np.interp(%s, %s, %s)" % (translated[2], translated[0], translated[1])
@@ -206,14 +253,14 @@ def _translate_expr(expr):
     if op is None:
         return apply_complex_rule(expr)
 
-    left_py = _translate_expr(expr[:idx])
-    right_py = _translate_expr(expr[idx + len(op):])
+    left_py = _translate_expr(expr[:idx], scalars)
+    right_py = _translate_expr(expr[idx + len(op):], scalars)
     if left_py == UNRESOLVED or right_py == UNRESOLVED:
         return UNRESOLVED
 
     if op == "*":
-        if not is_scalar_like(expr[:idx]) and not is_scalar_like(
-            expr[idx + len(op):]
+        if not _is_scalar(expr[:idx], scalars) and not _is_scalar(
+            expr[idx + len(op):], scalars
         ):
             return "%s @ %s" % (left_py, right_py)
         return "%s * %s" % (left_py, right_py)
@@ -222,6 +269,12 @@ def _translate_expr(expr):
     if op == "./":
         return "%s / %s" % (left_py, right_py)
     if op == "/":
+        # Matrix right-division only when both operands are arrays; a
+        # scalar divisor (e.g. length(P2), fs) means element-wise division.
+        if _is_scalar(expr[:idx], scalars) or _is_scalar(
+            expr[idx + len(op):], scalars
+        ):
+            return "%s / %s" % (left_py, right_py)
         return "np.linalg.solve(%s.T, %s.T).T" % (right_py, left_py)
     if op == "~=":
         return "%s != %s" % (left_py, right_py)
@@ -262,9 +315,9 @@ def _comment_for(stmt, python):
     return "# MATLAB: %s; -> Python: %s" % (stmt.text, _note_for(stmt, python))
 
 
-def _translate_loop(stmt):
+def _translate_loop(stmt, scalars=None):
     header = "%s %s" % (stmt.type, stmt.header)
-    body = [_translate_statement(s) for s in stmt.statements]
+    body = [_translate_statement(s, scalars) for s in stmt.statements]
     if any(s["python"] == UNRESOLVED for s in body):
         return {"kind": "loop", "source": header, "python": UNRESOLVED}
 
@@ -288,9 +341,23 @@ def _translate_loop(stmt):
     }
 
 
-def _translate_statement(stmt):
+def _record_scalar(stmt, scalars):
+    """Track variables assigned scalar values (e.g. fs = 1000) so a later
+    '/' with that variable is recognized as scalar division."""
+    if scalars is None or not hasattr(stmt, "kind") or stmt.kind != "assignment":
+        return
+    target, value = _split_assignment(stmt.text)
+    if target is None or value is None:
+        return
+    if "(" in target:
+        return
+    if _is_scalar(value, scalars):
+        scalars.add(target.strip())
+
+
+def _translate_statement(stmt, scalars=None):
     if not hasattr(stmt, "kind"):
-        return _translate_loop(stmt)
+        return _translate_loop(stmt, scalars)
     if stmt.kind == "command":
         if stmt.text in _COMMANDS:
             return {
@@ -305,7 +372,7 @@ def _translate_statement(stmt):
         target, value = _split_assignment(stmt.text)
         if value is None:
             return {"kind": stmt.kind, "source": stmt.text, "python": UNRESOLVED}
-        value_py = _translate_expr(value)
+        value_py = _translate_expr(value, scalars)
         if value_py == UNRESOLVED:
             return {"kind": stmt.kind, "source": stmt.text, "python": UNRESOLVED}
         target_py = apply_indexing_rule(target) if "(" in target else target
@@ -318,7 +385,7 @@ def _translate_statement(stmt):
         }
 
     if stmt.kind == "function_call":
-        python = _translate_expr(stmt.text)
+        python = _translate_expr(stmt.text, scalars)
         if python == UNRESOLVED:
             return {"kind": stmt.kind, "source": stmt.text, "python": UNRESOLVED}
         return {
@@ -407,11 +474,13 @@ def _preallocations_for_loop(loop, declared):
 
 def _translate_function(func):
     declared = set(func.parameters)
+    scalars = set()
     translated = []
     for stmt in func.statements:
         if _is_loop(stmt):
             translated.extend(_preallocations_for_loop(stmt, declared))
-        translated.append(_translate_statement(stmt))
+        translated.append(_translate_statement(stmt, scalars))
+        _record_scalar(stmt, scalars)
         target = _declare_target(stmt.text) if hasattr(stmt, "kind") else None
         if target:
             declared.add(target)
@@ -427,8 +496,10 @@ def translate_with_rulebook(structure):
     result = {"functions": [], "statements": []}
     for func in structure.functions:
         result["functions"].append(_translate_function(func))
+    scalars = set()
     for stmt in structure.statements:
-        result["statements"].append(_translate_statement(stmt))
+        result["statements"].append(_translate_statement(stmt, scalars))
+        _record_scalar(stmt, scalars)
     return result
 
 

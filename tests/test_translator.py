@@ -1,3 +1,4 @@
+import ast
 import unittest
 
 from tree_sitter import Language, Parser
@@ -6,7 +7,7 @@ from tree_sitter_matlab import language
 from reader import build_structure, load_matlab_file
 from reader.structure import Loop, Statement, Structure
 from rulebook import UNRESOLVED, translate_with_rulebook
-from rulebook.translator import _translate_loop
+from rulebook.translator import _translate_expr, _translate_loop
 from tests.paths import sample_matlab, sample_matlab_real
 
 
@@ -254,6 +255,68 @@ class TestAtlasDisplayResolves(unittest.TestCase):
         self.assertIn(
             "atlasRow[rowNo, :] = np.interp(interpPoints, nonZeroXAxis, tempE)",
             body_py,
+        )
+
+
+class TestFFTDivisionAndRange(unittest.TestCase):
+    """The exact fs=1000 FFT frequency-axis line: fs*(0:(length(P1)-1))/length(P2).
+
+    '/' dividing by the scalar length(P2) must become plain Python division,
+    and the parenthesized colon range must become np.arange(0, len(P1)).
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        parser = Parser(Language(language()))
+        tree = parser.parse(
+            load_matlab_file(sample_matlab("fft_basic.m")).encode("utf-8")
+        )
+        cls.result = translate_with_rulebook(build_structure(tree))
+
+    def _python_of(self, source):
+        for s in self.result["statements"]:
+            if s["source"] == source:
+                return s["python"]
+        return None
+
+    def test_fft_frequency_line_produces_valid_correct_python(self):
+        py = self._python_of("f = fs*(0:(length(P1)-1))/length(P2)")
+        self.assertIsNotNone(py)
+        compile(py, "<test>", "exec")
+        self.assertIn("/ len(P2)", py)
+        self.assertIn("np.arange(0, len(P1))", py)
+        self.assertNotIn("np.linalg.solve", py)
+        self.assertNotIn("length(", py)
+        self.assertNotIn(":", py)
+
+    def test_scalar_division_in_time_axis(self):
+        py = self._python_of("t = 0:1/fs:1-1/fs")
+        self.assertIsNotNone(py)
+        compile(py, "<test>", "exec")
+        self.assertIn("1 / fs", py)
+        self.assertNotIn("np.linalg.solve", py)
+
+    def test_parenthesized_range_translates_to_arange(self):
+        self.assertEqual(
+            _translate_expr("(0:(length(P1)-1))"),
+            "(np.arange(0, len(P1)))",
+        )
+
+    def test_division_by_scalar_count_uses_plain_slash(self):
+        self.assertEqual(_translate_expr("P2/length(P2)"), "P2 / len(P2)")
+        self.assertEqual(_translate_expr("1/fs"), "1 / fs")
+        self.assertEqual(_translate_expr("a / fs", {"fs"}), "a / fs")
+
+    def test_division_by_array_keeps_matrix_solve(self):
+        self.assertEqual(
+            _translate_expr("a / b"),
+            "np.linalg.solve(b.T, a.T).T",
+        )
+
+    def test_known_scalar_multiply_uses_plain_star(self):
+        self.assertEqual(
+            _translate_expr("fs*(0:(length(P1)-1))/length(P2)", {"fs"}),
+            "fs * (np.arange(0, len(P1))) / len(P2)",
         )
 
 

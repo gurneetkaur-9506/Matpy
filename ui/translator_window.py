@@ -21,6 +21,7 @@ from PyQt5.QtWidgets import (
 from repo_paths import sample_matlab
 from checker import accuracy, build_translation_report
 from reader import MATLAB_TO_PYTHON, PYTHON_TO_MATLAB, load_matlab_file
+from reference_store import save_reference_entry
 from translator import translate_file
 from ui.highlight import ProblemLineHighlighter
 from ui.summary import accuracy_style, report_text, summary_line
@@ -73,7 +74,6 @@ class TranslatorWindow(QMainWindow):
         self.source_label = QLabel("Source: MATLAB")
         self.output_label = QLabel("Output: Python")
         self.python_pane = QPlainTextEdit()
-        self.python_pane.setReadOnly(True)
         self.python_highlighter = ProblemLineHighlighter(self.python_pane.document())
 
         self.splitter = QSplitter()
@@ -89,6 +89,9 @@ class TranslatorWindow(QMainWindow):
         self.translate_button = QPushButton("Translate")
         self.translate_button.clicked.connect(self._translate)
 
+        self.save_button = QPushButton("Save correction")
+        self.save_button.clicked.connect(self._save_correction)
+
         self.direction_combo = QComboBox()
         for label, direction in _DIRECTION_ITEMS:
             self.direction_combo.addItem(label, direction)
@@ -98,6 +101,7 @@ class TranslatorWindow(QMainWindow):
         buttons.addWidget(self.direction_combo)
         buttons.addWidget(self.translate_button)
         buttons.addStretch(1)
+        buttons.addWidget(self.save_button)
 
         pane_labels = QHBoxLayout()
         pane_labels.addWidget(self.source_label)
@@ -275,6 +279,24 @@ class TranslatorWindow(QMainWindow):
     def _update_summary(self, result):
         self.status_line.setText(summary_line(result))
         self.status_line.setStyleSheet(accuracy_style(accuracy(result)["score"]))
+
+    def _save_correction(self):
+        if not self.matlab_path:
+            self.statusBar().showMessage("No MATLAB file loaded")
+            return
+        matlab_source = self.matlab_pane.toPlainText()
+        python_source = self.python_pane.toPlainText()
+        base_name = os.path.basename(self.matlab_path).rsplit(".", 1)[0]
+        try:
+            matlab_path, python_path = save_reference_entry(
+                matlab_source, python_source, base_name
+            )
+        except Exception as exc:
+            self.statusBar().showMessage("Save failed: %s" % exc)
+            return
+        self.statusBar().showMessage(
+            "Saved correction to %s and %s" % (matlab_path, python_path)
+        )
 
 
 def main():

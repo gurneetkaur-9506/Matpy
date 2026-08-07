@@ -2,6 +2,7 @@ import os
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
+import tempfile
 import unittest
 
 from PyQt5.QtWidgets import QApplication
@@ -411,6 +412,96 @@ class TestReportPanel(unittest.TestCase):
             "inconclusive", win.report_pane.toPlainText()
         )
         win.close()
+
+
+class TestEditableOutputPane(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.app = QApplication.instance() or QApplication([])
+
+    def test_python_pane_is_editable(self):
+        win = TranslatorWindow(matlab_path=FFT_MATLAB)
+        self.assertFalse(win.python_pane.isReadOnly())
+        win.python_pane.setPlainText("edited = True")
+        self.assertEqual(win.python_pane.toPlainText(), "edited = True")
+        win.close()
+
+    def test_save_correction_button_exists(self):
+        win = TranslatorWindow(matlab_path=FFT_MATLAB)
+        self.assertEqual(win.save_button.text(), "Save correction")
+        win.close()
+
+
+class TestSaveCorrection(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.app = QApplication.instance() or QApplication([])
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.dir = self._tmp.name
+
+    def test_save_without_file_shows_message(self):
+        win = TranslatorWindow()
+        win.save_button.click()
+        self.assertIn("No MATLAB file loaded", win.statusBar().currentMessage())
+        win.close()
+
+    def test_save_writes_matlab_and_python_pair(self):
+        from unittest import mock
+
+        win = TranslatorWindow(matlab_path=FFT_MATLAB)
+        win.translate_button.click()
+        win.python_pane.setPlainText("f = fs * (np.arange(0, len(P1))) / len(P2)")
+        with mock.patch("ui.translator_window.save_reference_entry") as mock_save:
+            mock_save.return_value = (
+                os.path.join(self.dir, "fft_basic_py.m"),
+                os.path.join(self.dir, "fft_basic.py"),
+            )
+            win.save_button.click()
+        mock_save.assert_called_once()
+        args, _ = mock_save.call_args
+        matlab_source, python_source, base_name = args
+        self.assertIn("fs = 1000;", matlab_source)
+        self.assertEqual(python_source, "f = fs * (np.arange(0, len(P1))) / len(P2)")
+        self.assertEqual(base_name, "fft_basic")
+        self.assertIn("Saved correction", win.statusBar().currentMessage())
+        win.close()
+
+
+class TestReferenceStore(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.dir = self._tmp.name
+
+    def test_save_creates_new_entry_pair(self):
+        from reference_store import save_reference_entry
+
+        m_path, p_path = save_reference_entry(
+            "fs = 1000;", "fs = 1000", "fft_basic", directory=self.dir
+        )
+        self.assertEqual(m_path, os.path.join(self.dir, "fft_basic_py.m"))
+        self.assertEqual(p_path, os.path.join(self.dir, "fft_basic.py"))
+        with open(m_path, encoding="utf-8") as f:
+            self.assertEqual(f.read(), "fs = 1000;")
+        with open(p_path, encoding="utf-8") as f:
+            self.assertEqual(f.read(), "fs = 1000")
+
+    def test_save_avoids_clobbering_existing_entry(self):
+        from reference_store import save_reference_entry
+
+        save_reference_entry("a;", "a", "fft_basic", directory=self.dir)
+        m_path, p_path = save_reference_entry(
+            "b;", "b", "fft_basic", directory=self.dir
+        )
+        self.assertEqual(m_path, os.path.join(self.dir, "fft_basic_2_py.m"))
+        self.assertEqual(p_path, os.path.join(self.dir, "fft_basic_2.py"))
+        with open(m_path, encoding="utf-8") as f:
+            self.assertEqual(f.read(), "b;")
+        with open(p_path, encoding="utf-8") as f:
+            self.assertEqual(f.read(), "b")
 
 
 if __name__ == "__main__":

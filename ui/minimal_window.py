@@ -21,6 +21,7 @@ from PyQt5.QtWidgets import (
 from repo_paths import sample_matlab
 from checker import accuracy, build_translation_report
 from reader import MATLAB_TO_PYTHON, PYTHON_TO_MATLAB
+from reference_store import save_reference_entry
 from translator import translate_file
 from ui.highlight import ProblemLineHighlighter
 from ui.summary import accuracy_style, accuracy_text, report_text, status_line
@@ -30,10 +31,6 @@ DEFAULT_MATLAB_PATH = sample_matlab("fft_basic.m")
 _DIRECTION_ITEMS = (
     ("MATLAB -> Python", MATLAB_TO_PYTHON),
     ("Python -> MATLAB", PYTHON_TO_MATLAB),
-)
-
-_REFERENCE_DIR = os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "..", "reference_set"
 )
 
 _MARKER_STYLE = {
@@ -228,9 +225,23 @@ class MinimalTranslatorWindow(QMainWindow):
         self.setWindowTitle("MATPY Translator - %s" % path)
         self.statusBar().showMessage("Loaded %s" % path)
 
-    def reference_path(self):
-        name = os.path.basename(self.matlab_path).rsplit(".", 1)[0] + ".py"
-        return os.path.normpath(os.path.join(_REFERENCE_DIR, name))
+    def _save_correction(self):
+        if not self.matlab_path:
+            self.statusBar().showMessage("No MATLAB file loaded")
+            return
+        base_name = os.path.basename(self.matlab_path).rsplit(".", 1)[0]
+        try:
+            matlab_path, python_path = save_reference_entry(
+                self.matlab_pane.toPlainText(),
+                self.python_pane.toPlainText(),
+                base_name,
+            )
+        except Exception as exc:
+            self.statusBar().showMessage("Save failed: %s" % exc)
+            return
+        self.statusBar().showMessage(
+            "Saved correction to %s and %s" % (matlab_path, python_path)
+        )
 
     def current_direction(self):
         return self.direction_combo.currentData()
