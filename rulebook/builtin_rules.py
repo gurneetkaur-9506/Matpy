@@ -2,12 +2,16 @@ import re
 
 BUILTIN_RULES = {
     "abs": {"python": "np.abs", "arg_mode": "same"},
+    "ceil": {"python": "np.ceil", "arg_mode": "same"},
     "cos": {"python": "np.cos", "arg_mode": "same"},
     "exp": {"python": "np.exp", "arg_mode": "same"},
     "fft": {"python": "np.fft.fft", "arg_mode": "same"},
+    "fix": {"python": "np.trunc", "arg_mode": "same"},
+    "floor": {"python": "np.floor", "arg_mode": "same"},
     "linspace": {"python": "np.linspace", "arg_mode": "same"},
     "log": {"python": "np.log", "arg_mode": "same"},
     "reshape": {"python": "np.reshape", "arg_mode": "tuple_dims"},
+    "round": {"python": "np.round", "arg_mode": "same"},
     "sin": {"python": "np.sin", "arg_mode": "same"},
     "size": {"python": ".shape", "arg_mode": "size"},
     "sqrt": {"python": "np.sqrt", "arg_mode": "same"},

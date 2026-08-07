@@ -54,7 +54,11 @@ def _emit_block(statements, lines, indent="", problems=None):
                 problems.append(len(lines))
             lines.append(indent + "# UNRESOLVED: %s" % stmt["source"])
             continue
-        lines.append(indent + stmt["python"])
+        if "\n" in stmt["python"]:
+            for sub in stmt["python"].split("\n"):
+                lines.append(indent + sub)
+        else:
+            lines.append(indent + stmt["python"])
         if stmt["kind"] == "loop":
             _emit_block(
                 stmt.get("body", []), lines, indent=indent + "    ", problems=problems
@@ -108,7 +112,11 @@ def _emit_block_reverse(statements, lines, indent="", problems=None):
             continue
         if not matlab:
             continue
-        lines.append(indent + matlab + ";")
+        if "\n" in matlab:
+            for sub in matlab.split("\n"):
+                lines.append(indent + sub + ";")
+        else:
+            lines.append(indent + matlab + ";")
 
 
 def _emit_function_reverse(func, lines, problems=None):
