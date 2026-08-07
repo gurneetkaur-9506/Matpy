@@ -7,6 +7,7 @@ from PyQt5.QtWidgets import (
     QComboBox,
     QFileDialog,
     QHBoxLayout,
+    QInputDialog,
     QLabel,
     QMainWindow,
     QPlainTextEdit,
@@ -17,15 +18,12 @@ from PyQt5.QtWidgets import (
     QWidget,
 )
 
-from repo_paths import sample_matlab
 from checker import accuracy, build_translation_report
 from reader import MATLAB_TO_PYTHON, PYTHON_TO_MATLAB
 from reference_store import save_reference_entry
 from translator import translate_source
 from ui.highlight import ProblemLineHighlighter
 from ui.summary import accuracy_style, accuracy_text, report_text, status_line
-
-DEFAULT_MATLAB_PATH = sample_matlab("fft_basic.m")
 
 _DIRECTION_ITEMS = (
     ("MATLAB -> Python", MATLAB_TO_PYTHON),
@@ -69,7 +67,7 @@ def _read_text(path):
 
 
 class MinimalTranslatorWindow(QMainWindow):
-    def __init__(self, matlab_path=DEFAULT_MATLAB_PATH):
+    def __init__(self, matlab_path=None):
         super().__init__()
         self.setWindowTitle("MATPY Translator")
         self.resize(1000, 640)
@@ -216,7 +214,15 @@ class MinimalTranslatorWindow(QMainWindow):
         if self.matlab_path:
             base_name = os.path.basename(self.matlab_path).rsplit(".", 1)[0]
         else:
-            base_name = "typed_source"
+            base_name, accepted = QInputDialog.getText(
+                self,
+                "Save correction",
+                "Reference entry name (no extension):",
+            )
+            base_name = base_name.strip()
+            if not accepted or not base_name:
+                self.statusBar().showMessage("Save cancelled")
+                return
         try:
             matlab_path, python_path = save_reference_entry(
                 matlab_source, python_source, base_name
@@ -303,7 +309,7 @@ class MinimalTranslatorWindow(QMainWindow):
 
 
 def main():
-    path = sys.argv[1] if len(sys.argv) > 1 else DEFAULT_MATLAB_PATH
+    path = sys.argv[1] if len(sys.argv) > 1 else None
     app = QApplication(sys.argv)
     window = MinimalTranslatorWindow(matlab_path=path)
     window.show()

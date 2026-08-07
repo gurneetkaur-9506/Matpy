@@ -459,6 +459,49 @@ class TestSaveCorrection(unittest.TestCase):
         self.assertIn("Saved correction", win.statusBar().currentMessage())
         win.close()
 
+    def test_save_derives_name_from_loaded_file(self):
+        from unittest import mock
+
+        win = TranslatorWindow(matlab_path=FFT_MATLAB)
+        win.python_pane.setPlainText("y = x + 1")
+        with mock.patch("ui.translator_window.save_reference_entry") as mock_save:
+            mock_save.return_value = ("m.m", "p.py")
+            win.save_button.click()
+        _, _, base_name = mock_save.call_args[0]
+        self.assertEqual(base_name, "fft_basic")
+        win.close()
+
+    def test_save_without_file_prompts_for_name(self):
+        from unittest import mock
+
+        win = TranslatorWindow()
+        win.matlab_pane.setPlainText("x = 1;\n")
+        win.python_pane.setPlainText("x = 1")
+        with mock.patch(
+            "ui.translator_window.QInputDialog.getText",
+            return_value=("radar_simulation", True),
+        ), mock.patch("ui.translator_window.save_reference_entry") as mock_save:
+            mock_save.return_value = ("m.m", "p.py")
+            win.save_button.click()
+        _, _, base_name = mock_save.call_args[0]
+        self.assertEqual(base_name, "radar_simulation")
+        win.close()
+
+    def test_save_cancelled_when_no_file_and_prompt_rejected(self):
+        from unittest import mock
+
+        win = TranslatorWindow()
+        win.matlab_pane.setPlainText("x = 1;\n")
+        win.python_pane.setPlainText("x = 1")
+        with mock.patch(
+            "ui.translator_window.QInputDialog.getText",
+            return_value=("", False),
+        ), mock.patch("ui.translator_window.save_reference_entry") as mock_save:
+            win.save_button.click()
+        mock_save.assert_not_called()
+        self.assertIn("Save cancelled", win.statusBar().currentMessage())
+        win.close()
+
 
 class TestEditableSourcePane(unittest.TestCase):
     @classmethod

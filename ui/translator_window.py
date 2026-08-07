@@ -7,6 +7,7 @@ from PyQt5.QtWidgets import (
     QComboBox,
     QFileDialog,
     QHBoxLayout,
+    QInputDialog,
     QLabel,
     QMainWindow,
     QPlainTextEdit,
@@ -17,7 +18,6 @@ from PyQt5.QtWidgets import (
     QWidget,
 )
 
-from repo_paths import sample_matlab
 from checker import accuracy, build_translation_report
 from reader import MATLAB_TO_PYTHON, PYTHON_TO_MATLAB, load_matlab_file
 from reference_store import save_reference_entry
@@ -274,7 +274,15 @@ class TranslatorWindow(QMainWindow):
         if self.matlab_path:
             base_name = os.path.basename(self.matlab_path).rsplit(".", 1)[0]
         else:
-            base_name = "typed_source"
+            base_name, accepted = QInputDialog.getText(
+                self,
+                "Save correction",
+                "Reference entry name (no extension):",
+            )
+            base_name = base_name.strip()
+            if not accepted or not base_name:
+                self.statusBar().showMessage("Save cancelled")
+                return
         try:
             matlab_path, python_path = save_reference_entry(
                 matlab_source, python_source, base_name
@@ -288,7 +296,7 @@ class TranslatorWindow(QMainWindow):
 
 
 def main():
-    path = sys.argv[1] if len(sys.argv) > 1 else sample_matlab("fft_basic.m")
+    path = sys.argv[1] if len(sys.argv) > 1 else None
     app = QApplication(sys.argv)
     window = TranslatorWindow(matlab_path=path)
     window.show()
