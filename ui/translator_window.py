@@ -53,7 +53,8 @@ _MARKER_STYLE = {
 def section_marker(status):
     if status in ("ok", "verified", "none"):
         return "verified"
-    if status in ("unresolved", "drafted", "review needed", "skipped"):
+    if status in ("unresolved", "drafted", "review needed", "skipped",
+                  "inconclusive_no_matlab"):
         return "unverified"
     if status in ("error", "failed", "errored"):
         return "flagged"

@@ -6,7 +6,8 @@ of dicts, one per issue:
 
     * rulebook lines that were left UNRESOLVED,
     * Assistant drafts that failed or were flagged with low confidence,
-    * Checker verdicts of "failed" or "review needed".
+    * Checker verdicts of "failed", "review needed", or
+      "inconclusive_no_matlab".
 
 Each entry tells a human what went wrong: where it happened (line number in
 the original source when it can be located), the original source text, what
@@ -225,6 +226,12 @@ def _checker_entries(result):
             "execution failure, misaligned output names, shape mismatch, or "
             "non-finite values were involved."
         )
+    elif status == "inconclusive_no_matlab":
+        reason = (
+            "The checker could not reach a conclusive verdict because no "
+            "real MATLAB engine is connected; the numeric cross-check ran "
+            "against a mock reference and its result is inconclusive."
+        )
     else:
         return []
     return [
@@ -257,7 +264,7 @@ def build_translation_report(result):
                        when it cannot be located (e.g. a whole-file verdict).
             source:    the original source text of the problematic line.
             issue:     "unresolved", "low confidence", "assistant error",
-                       "failed", or "review needed".
+                       "failed", "review needed", or "inconclusive_no_matlab".
             stage:     the pipeline stage that reported it: "rulebook",
                        "assistant", or "checker".
             attempted: what that stage tried to do.

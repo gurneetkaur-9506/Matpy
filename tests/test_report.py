@@ -223,6 +223,16 @@ class TestCheckerVerdicts(unittest.TestCase):
         self.assertEqual(report[0]["issue"], "review needed")
         self.assertIn("could not decide", report[0]["reason"])
 
+    def test_inconclusive_no_matlab_verdict_reported(self):
+        result = _result(checker="inconclusive_no_matlab")
+        report = build_translation_report(result)
+        self.assertEqual(len(report), 1)
+        entry = report[0]
+        self.assertEqual(entry["issue"], "inconclusive_no_matlab")
+        self.assertEqual(entry["stage"], "checker")
+        self.assertIsNone(entry["line"])
+        self.assertIn("no real MATLAB engine", entry["reason"])
+
     def test_skipped_and_verified_not_reported(self):
         for status in ("skipped", "verified"):
             result = _result(checker=status)
@@ -232,7 +242,11 @@ class TestCheckerVerdicts(unittest.TestCase):
 class TestReportWithBeamform(unittest.TestCase):
     def test_beamform_basic_forward_is_fully_resolved(self):
         result = translate_file(BEAMFORM_MATLAB)
-        self.assertEqual(build_translation_report(result), [])
+        report = build_translation_report(result)
+        issues = [e["issue"] for e in report]
+        self.assertNotIn("unresolved", issues)
+        self.assertNotIn("low confidence", issues)
+        self.assertEqual(issues, ["inconclusive_no_matlab"])
 
     @mock.patch(
         "assistant.draft_translation._call_ollama",
@@ -248,7 +262,7 @@ class TestReportWithBeamform(unittest.TestCase):
         issues = [e["issue"] for e in report]
         self.assertIn("unresolved", issues)
         self.assertIn("low confidence", issues)
-        self.assertIn("failed", issues)
+        self.assertIn("inconclusive_no_matlab", issues)
 
         by_issue = {e["issue"]: e for e in report}
         low = by_issue["low confidence"]
@@ -264,7 +278,7 @@ class TestReportWithBeamform(unittest.TestCase):
         self.assertIn(7, lines)
         self.assertIn(9, lines)
 
-        self.assertIsNone(by_issue["failed"]["line"])
+        self.assertIsNone(by_issue["inconclusive_no_matlab"]["line"])
 
 
 if __name__ == "__main__":

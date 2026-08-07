@@ -33,7 +33,9 @@ class TestTranslateFile(unittest.TestCase):
         self.assertEqual(result["sections"]["rulebook"]["status"], "ok")
         self.assertEqual(result["sections"]["rulebook"]["unresolved"], 0)
         self.assertEqual(result["sections"]["assistant"]["status"], "none")
-        self.assertEqual(result["sections"]["checker"]["status"], "skipped")
+        self.assertEqual(
+            result["sections"]["checker"]["status"], "inconclusive_no_matlab"
+        )
         self.assertIn("import numpy as np", result["python"])
 
     @mock.patch("assistant.draft_translation._call_ollama", return_value=FAKE_RESPONSE)
@@ -46,7 +48,9 @@ class TestTranslateFile(unittest.TestCase):
         self.assertEqual(result["sections"]["rulebook"]["unresolved"], 0)
         self.assertEqual(result["sections"]["assistant"]["status"], "none")
         self.assertEqual(result["sections"]["assistant"]["drafted"], [])
-        self.assertEqual(result["sections"]["checker"]["status"], "skipped")
+        self.assertEqual(
+            result["sections"]["checker"]["status"], "inconclusive_no_matlab"
+        )
 
     def test_reader_error(self):
         result = translate_file("/no/such/file.m")
@@ -67,7 +71,51 @@ class TestTranslateFile(unittest.TestCase):
         )
         checker = result["sections"]["checker"]
         self.assertNotEqual(checker["status"], "skipped")
-        self.assertIn(checker["status"], {"verified", "failed", "review needed"})
+        self.assertIn(
+            checker["status"],
+            {"verified", "failed", "review needed", "inconclusive_no_matlab"},
+        )
+
+    @mock.patch("translator.matlab_engine_available", return_value=True)
+    def test_checker_skipped_when_engine_available_no_inputs(self, mock_engine):
+        result = translate_file(sample_matlab("indexing_ops.m"))
+        self.assertEqual(result["sections"]["checker"]["status"], "skipped")
+
+    @mock.patch("translator.verify", return_value="failed")
+    @mock.patch("translator.matlab_engine_available", return_value=True)
+    def test_checker_failed_preserved_when_engine_available(
+        self, mock_engine, mock_verify
+    ):
+        result = translate_file(
+            sample_matlab("beamform_basic.m"),
+            inputs={
+                "N": 3,
+                "d": 0.5,
+                "lamb": 1.0,
+                "theta": np.linspace(0, np.pi, 3),
+                "theta0": 0.0,
+            },
+        )
+        self.assertEqual(result["sections"]["checker"]["status"], "failed")
+
+    @mock.patch("translator.verify", return_value="failed")
+    def test_checker_failed_maps_to_inconclusive_without_engine(self, mock_verify):
+        result = translate_file(
+            sample_matlab("beamform_basic.m"),
+            inputs={
+                "N": 3,
+                "d": 0.5,
+                "lamb": 1.0,
+                "theta": np.linspace(0, np.pi, 3),
+                "theta0": 0.0,
+            },
+        )
+        self.assertEqual(
+            result["sections"]["checker"]["status"], "inconclusive_no_matlab"
+        )
+        self.assertIn(
+            "MATLAB engine", result["sections"]["checker"]["detail"]
+        )
 
     def test_default_direction_is_matlab_to_python(self):
         result = translate_file(FFT_MATLAB)

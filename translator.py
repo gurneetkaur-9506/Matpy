@@ -27,6 +27,20 @@ def _parse(path, direction):
     return load_structure(path, direction)
 
 
+def matlab_engine_available():
+    """Return True when a real MATLAB engine is importable.
+
+    The numeric cross-check is only conclusive when a real MATLAB engine is
+    available; otherwise the reference comes from a mock stub and the
+    checker's verdict is inconclusive.
+    """
+    try:
+        import matlab.engine  # noqa: F401
+    except ImportError:
+        return False
+    return True
+
+
 def _emit_block(statements, lines, indent="", problems=None):
     for stmt in statements:
         if stmt["kind"] == "command" and not stmt["python"]:
@@ -191,10 +205,19 @@ def translate_file(
     result["problems"] = problems
 
     if not inputs:
-        result["sections"]["checker"] = {
-            "status": "skipped",
-            "detail": "no inputs provided for numeric cross-check",
-        }
+        if matlab_engine_available():
+            result["sections"]["checker"] = {
+                "status": "skipped",
+                "detail": "no inputs provided for numeric cross-check",
+            }
+        else:
+            result["sections"]["checker"] = {
+                "status": "inconclusive_no_matlab",
+                "detail": (
+                    "no inputs provided and no real MATLAB engine is "
+                    "connected; the numeric cross-check cannot be conclusive"
+                ),
+            }
         return result
 
     with tempfile.TemporaryDirectory() as tmp:
@@ -213,7 +236,18 @@ def translate_file(
                 f.write(result["python"])
         try:
             verdict = verify(matlab_path, py_path, inputs, tolerance=tolerance)
-            result["sections"]["checker"] = {"status": verdict}
+            if verdict == "failed" and not matlab_engine_available():
+                result["sections"]["checker"] = {
+                    "status": "inconclusive_no_matlab",
+                    "detail": (
+                        "the translated output disagrees with the reference, "
+                        "but the reference is only a mock because no real "
+                        "MATLAB engine is connected; the verdict is "
+                        "inconclusive"
+                    ),
+                }
+            else:
+                result["sections"]["checker"] = {"status": verdict}
         except Exception as exc:
             result["sections"]["checker"] = {
                 "status": "review needed",

@@ -76,7 +76,10 @@ class TestTranslatorWindow(unittest.TestCase):
         self.assertIn("Rulebook: ok", win.section_labels["rulebook"].text())
         self.assertIn("Assistant: none", win.section_labels["assistant"].text())
         self.assertIn("#2ecc71", win.section_labels["assistant"].styleSheet())
-        self.assertIn("Checker: skipped", win.section_labels["checker"].text())
+        self.assertIn(
+            "Checker: inconclusive_no_matlab",
+            win.section_labels["checker"].text(),
+        )
         self.assertIn("#f1c40f", win.section_labels["checker"].styleSheet())
         win.close()
 
@@ -381,18 +384,19 @@ class TestReportPanel(unittest.TestCase):
         self.assertEqual(win.report_button.text(), "Report (%d)" % len(text.splitlines()))
         win.close()
 
-    def test_report_empty_state_after_clean_translate(self):
+    def test_report_shows_checker_inconclusive_after_clean_translate(self):
         win = TranslatorWindow(matlab_path=FFT_MATLAB)
         win.translate_button.click()
-        self.assertEqual(win.report_pane.toPlainText(), "Nothing to report.")
-        self.assertEqual(win.report_button.text(), "Report")
+        text = win.report_pane.toPlainText()
+        self.assertIn("no real MATLAB engine", text)
+        self.assertEqual(win.report_button.text(), "Report (1)")
         win.close()
 
     def test_report_reset_on_direction_change(self):
         win = TranslatorWindow(matlab_path=FFT_MATLAB)
         win.show()
         win.translate_button.click()
-        self.assertEqual(win.report_pane.toPlainText(), "Nothing to report.")
+        self.assertIn("no real MATLAB engine", win.report_pane.toPlainText())
         reverse_index = win.direction_combo.findData(PYTHON_TO_MATLAB)
         win.direction_combo.setCurrentIndex(reverse_index)
         self.assertEqual(win.report_pane.toPlainText(), "")
@@ -400,10 +404,12 @@ class TestReportPanel(unittest.TestCase):
         self.assertEqual(win.report_button.text(), "Report")
         win.close()
 
-    def test_clean_translate_reports_nothing(self):
+    def test_clean_translate_reports_checker_inconclusive(self):
         win = TranslatorWindow(matlab_path=FFT_MATLAB)
         win.translate_button.click()
-        self.assertEqual(win.report_pane.toPlainText(), "Nothing to report.")
+        self.assertIn(
+            "inconclusive", win.report_pane.toPlainText()
+        )
         win.close()
 
 
