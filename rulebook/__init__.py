@@ -13,6 +13,7 @@ from .operator_rules import (
     OPERATOR_RULES,
     apply_operator_rule,
     apply_operator_rule_reverse,
+    scientific_literals,
 )
 from .translator import (
     UNRESOLVED,
@@ -32,6 +33,7 @@ __all__ = [
     "apply_indexing_rule_reverse",
     "apply_operator_rule",
     "apply_operator_rule_reverse",
+    "scientific_literals",
     "translate_with_rulebook",
     "translate_with_rulebook_reverse",
 ]

@@ -26,6 +26,30 @@ for _rule in OPERATOR_RULES.values():
 
 _TWO_CHAR_OPS = {".*", "./"}
 
+# Any token matching this pattern is a single atomic scientific-notation
+# number literal (e.g. 10e-6, 1E+10, 2.5e-9). It must never be split by
+# operator scanning, otherwise the '-'/'+' in the exponent or the '.' in the
+# mantissa could be misread as operators in a larger expression.
+_SCIENTIFIC_LITERAL = re.compile(r"\d+(?:\.\d+)?[eE][+-]?\d+")
+
+
+def scientific_literals(expr):
+    """Return every scientific-notation number literal found in ``expr``.
+
+    The whole class of literals matching ``digits(.digits)?[eE][+-]?digits``
+    is recognized here, so callers and tests can rely on a single tokenizer
+    instead of value-specific special cases.
+    """
+    return _SCIENTIFIC_LITERAL.findall(expr)
+
+
+def _protected_positions(expr):
+    protected = set()
+    for match in _SCIENTIFIC_LITERAL.finditer(expr):
+        protected.update(range(match.start(), match.end()))
+    return protected
+
+
 _SCALAR_RE = re.compile(r"^[-+]?(?:\d+(?:\.\d+)?|\.\d+)(?:[eE][+-]?\d+)?$")
 _IMAG_SCALAR_RE = re.compile(r"^[-+]?(?:\d+(?:\.\d+)?|\.\d+)(?:[eE][+-]?\d+)?i$")
 _SCALAR_CONSTANTS = {"pi", "e"}
@@ -87,11 +111,16 @@ def is_scalar_like(expr):
 
 
 def _find_last_operator(expr):
+    protected = _protected_positions(expr)
+
     def _find(chars):
         depth = 0
         i = len(expr) - 1
         while i >= 0:
             ch = expr[i]
+            if i in protected:
+                i -= 1
+                continue
             if ch in ")]":
                 depth += 1
             elif ch in "([":
@@ -120,9 +149,19 @@ def _find_last_operator(expr):
 
     idx = _find("*/")
     if idx is not None:
-        if expr[idx] == "*" and idx > 0 and expr[idx - 1] == ".":
+        if (
+            expr[idx] == "*"
+            and idx > 0
+            and expr[idx - 1] == "."
+            and (idx - 1) not in protected
+        ):
             return idx - 1, ".*"
-        if expr[idx] == "/" and idx > 0 and expr[idx - 1] == ".":
+        if (
+            expr[idx] == "/"
+            and idx > 0
+            and expr[idx - 1] == "."
+            and (idx - 1) not in protected
+        ):
             return idx - 1, "./"
         return idx, expr[idx]
 
@@ -161,10 +200,14 @@ def apply_operator_rule(expr):
 
 
 def _find_last_reverse_operator(expr):
+    protected = _protected_positions(expr)
     depth = 0
     i = len(expr) - 1
     while i >= 0:
         ch = expr[i]
+        if i in protected:
+            i -= 1
+            continue
         if ch in ")]":
             depth += 1
         elif ch in "([":
