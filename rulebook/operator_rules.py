@@ -53,7 +53,11 @@ def _protected_positions(expr):
 _SCALAR_RE = re.compile(r"^[-+]?(?:\d+(?:\.\d+)?|\.\d+)(?:[eE][+-]?\d+)?$")
 _IMAG_SCALAR_RE = re.compile(r"^[-+]?(?:\d+(?:\.\d+)?|\.\d+)(?:[eE][+-]?\d+)?i$")
 _SCALAR_CONSTANTS = {"pi", "e"}
-_SCALAR_FUNCTIONS = {"length", "numel", "len"}
+# Calls that always yield a scalar: a count (length/numel/len), a rounded
+# value (round), or a reduction over a whole array (max/min produce a scalar
+# for the 1-D inputs used here).  Recognized so a later '/' with one of these
+# as the divisor stays element-wise instead of becoming a matrix solve.
+_SCALAR_FUNCTIONS = {"length", "numel", "len", "round", "max", "min"}
 
 
 def _split_call_args(expr):
@@ -74,8 +78,27 @@ def _split_call_args(expr):
     return None
 
 
-def is_scalar_like(expr):
+def _strip_outer_parens(expr):
     expr = expr.strip()
+    while expr.startswith("(") and expr.endswith(")"):
+        depth = 0
+        spanning = True
+        for i, ch in enumerate(expr):
+            if ch == "(":
+                depth += 1
+            elif ch == ")":
+                depth -= 1
+                if depth == 0 and i < len(expr) - 1:
+                    spanning = False
+                    break
+        if not spanning:
+            break
+        expr = expr[1:-1].strip()
+    return expr
+
+
+def is_scalar_like(expr):
+    expr = _strip_outer_parens(expr)
     if not expr:
         return True
     if _SCALAR_RE.fullmatch(expr) or _IMAG_SCALAR_RE.fullmatch(expr):
