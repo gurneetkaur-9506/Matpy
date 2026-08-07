@@ -56,10 +56,10 @@ class TestTranslatorWindow(unittest.TestCase):
         self.assertIn("plt.plot(f, P1)", win.python_pane.toPlainText())
         win.close()
 
-    def test_translate_without_file_shows_message(self):
+    def test_translate_without_source_shows_message(self):
         win = TranslatorWindow()
         win.translate_button.click()
-        self.assertIn("No MATLAB file loaded", win.statusBar().currentMessage())
+        self.assertIn("Enter or load source first", win.statusBar().currentMessage())
         win.close()
 
     def test_sections_pending_before_translate(self):
@@ -158,35 +158,28 @@ class TestTranslatorWindow(unittest.TestCase):
         self.assertTrue(win.python_highlighter._problem_lines)
         win.close()
 
-    def test_empty_state_shows_placeholder_message_and_open_button(self):
-        from PyQt5.QtWidgets import QLabel, QPushButton
-
+    def test_empty_state_shows_editable_source_pane_and_open_button(self):
         win = TranslatorWindow()
-        self.assertIs(win.stack.currentWidget(), win.placeholder)
-        messages = [w.text() for w in win.placeholder.findChildren(QLabel)]
-        self.assertIn("Open a MATLAB or Python file to translate it", messages)
-        buttons = win.placeholder.findChildren(QPushButton)
-        self.assertEqual(len(buttons), 1)
-        self.assertEqual(buttons[0].text(), "Open")
+        self.assertFalse(win.matlab_pane.isReadOnly())
+        self.assertEqual(win.matlab_pane.toPlainText(), "")
+        self.assertEqual(win.open_button.text(), "Open file")
         win.close()
 
-    def test_loaded_state_shows_splitter(self):
+    def test_loaded_state_populates_editable_left_pane(self):
         win = TranslatorWindow(matlab_path=FFT_MATLAB)
-        self.assertIs(win.stack.currentWidget(), win.splitter)
+        self.assertFalse(win.matlab_pane.isReadOnly())
+        self.assertIn("fs = 1000;", win.matlab_pane.toPlainText())
         win.close()
 
     def test_open_python_file_sets_reverse_direction_and_loads(self):
         from unittest import mock
-
-        from PyQt5.QtWidgets import QPushButton
 
         win = TranslatorWindow()
         with mock.patch(
             "ui.translator_window.QFileDialog.getOpenFileName",
             return_value=(INDEXING_PYTHON, ""),
         ):
-            win.placeholder.findChildren(QPushButton)[0].click()
-        self.assertIs(win.stack.currentWidget(), win.splitter)
+            win.open_button.click()
         self.assertEqual(win.current_direction(), PYTHON_TO_MATLAB)
         self.assertIn("A = np.array", win.matlab_pane.toPlainText())
         win.close()
@@ -194,15 +187,12 @@ class TestTranslatorWindow(unittest.TestCase):
     def test_open_matlab_file_keeps_forward_direction_and_loads(self):
         from unittest import mock
 
-        from PyQt5.QtWidgets import QPushButton
-
         win = TranslatorWindow()
         with mock.patch(
             "ui.translator_window.QFileDialog.getOpenFileName",
             return_value=(FFT_MATLAB, ""),
         ):
-            win.placeholder.findChildren(QPushButton)[0].click()
-        self.assertIs(win.stack.currentWidget(), win.splitter)
+            win.open_button.click()
         self.assertEqual(win.current_direction(), MATLAB_TO_PYTHON)
         self.assertIn("fs = 1000;", win.matlab_pane.toPlainText())
         win.close()
@@ -442,10 +432,10 @@ class TestSaveCorrection(unittest.TestCase):
         self.addCleanup(self._tmp.cleanup)
         self.dir = self._tmp.name
 
-    def test_save_without_file_shows_message(self):
+    def test_save_without_source_shows_message(self):
         win = TranslatorWindow()
         win.save_button.click()
-        self.assertIn("No MATLAB file loaded", win.statusBar().currentMessage())
+        self.assertIn("No source to save", win.statusBar().currentMessage())
         win.close()
 
     def test_save_writes_matlab_and_python_pair(self):
@@ -467,6 +457,49 @@ class TestSaveCorrection(unittest.TestCase):
         self.assertEqual(python_source, "f = fs * (np.arange(0, len(P1))) / len(P2)")
         self.assertEqual(base_name, "fft_basic")
         self.assertIn("Saved correction", win.statusBar().currentMessage())
+        win.close()
+
+
+class TestEditableSourcePane(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.app = QApplication.instance() or QApplication([])
+
+    def test_source_pane_is_editable(self):
+        win = TranslatorWindow()
+        self.assertFalse(win.matlab_pane.isReadOnly())
+        win.matlab_pane.setPlainText("x = 1;")
+        self.assertEqual(win.matlab_pane.toPlainText(), "x = 1;")
+        win.close()
+
+    def test_typed_source_translates_from_pane(self):
+        win = TranslatorWindow()
+        win.matlab_pane.setPlainText("x = 3 + 4;\n")
+        win.translate_button.click()
+        output = win.python_pane.toPlainText()
+        self.assertIn("x = 3 + 4", output)
+        self.assertNotEqual(win.status_line.text(), "Not translated yet")
+        win.close()
+
+    def test_edited_source_translates_pane_content_not_file(self):
+        win = TranslatorWindow(matlab_path=FFT_MATLAB)
+        win.matlab_pane.setPlainText("x = sin(0.5);\n")
+        win.translate_button.click()
+        self.assertIn("x = np.sin(0.5)", win.python_pane.toPlainText())
+        self.assertNotIn("fs = 1000", win.python_pane.toPlainText())
+        win.close()
+
+    def test_open_button_adds_file_content_to_editable_pane(self):
+        from unittest import mock
+
+        win = TranslatorWindow()
+        with mock.patch(
+            "ui.translator_window.QFileDialog.getOpenFileName",
+            return_value=(FFT_MATLAB, ""),
+        ):
+            win.open_button.click()
+        self.assertEqual(win.matlab_path, os.fspath(FFT_MATLAB))
+        self.assertIn("plot(f, P1);", win.matlab_pane.toPlainText())
         win.close()
 
 

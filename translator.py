@@ -6,7 +6,11 @@ import tempfile
 
 from assistant import draft_unresolved_functions
 from checker import verify
-from reader import MATLAB_TO_PYTHON, PYTHON_TO_MATLAB, load_structure
+from reader import (
+    MATLAB_TO_PYTHON,
+    PYTHON_TO_MATLAB,
+    load_structure_from_source,
+)
 from rulebook import UNRESOLVED, translate_with_rulebook, translate_with_rulebook_reverse
 from specialist_lib import __all__ as SPECIALIST_NAMES
 
@@ -23,8 +27,8 @@ def _specialist_lib_contents():
     }
 
 
-def _parse(path, direction):
-    return load_structure(path, direction)
+def _parse(source, direction):
+    return load_structure_from_source(source, direction)
 
 
 def matlab_engine_available():
@@ -143,8 +147,54 @@ def code_for_result_reverse(result, problems=None):
 def translate_file(
     matlab_path, inputs=None, tolerance=1e-8, direction=MATLAB_TO_PYTHON
 ):
+    """Translate a MATLAB/Python source file on disk.
+
+    Reads the file and delegates to :func:`translate_source`.  The result's
+    ``file`` is the original path and ``source`` holds the file contents.
+    """
+    try:
+        with open(matlab_path, "r", encoding="utf-8") as f:
+            source = f.read()
+    except OSError as exc:
+        result = {
+            "file": matlab_path,
+            "direction": direction,
+            "status": "error",
+            "python": "",
+            "functions": [],
+            "sections": {},
+        }
+        result["sections"]["reader"] = {"status": "error", "detail": str(exc)}
+        return result
+    return translate_source(
+        source,
+        inputs=inputs,
+        tolerance=tolerance,
+        direction=direction,
+        name=matlab_path,
+    )
+
+
+def translate_source(
+    source, inputs=None, tolerance=1e-8, direction=MATLAB_TO_PYTHON, name=None
+):
+    """Translate MATLAB/Python source text directly (no file required).
+
+    ``name`` is an optional label for the result's ``file`` field (used for
+    reporting and file naming); it does not need to be a real path.
+
+    Returns the same result shape as :func:`translate_file`.
+    """
+    if name:
+        file_label = name
+    elif direction == PYTHON_TO_MATLAB:
+        file_label = "input.py"
+    else:
+        file_label = "input.m"
+
     result = {
-        "file": matlab_path,
+        "file": file_label,
+        "source": source,
         "direction": direction,
         "status": "ok",
         "python": "",
@@ -153,7 +203,7 @@ def translate_file(
     }
 
     try:
-        structure = _parse(matlab_path, direction)
+        structure = _parse(source, direction)
     except Exception as exc:
         result["status"] = "error"
         result["sections"]["reader"] = {"status": "error", "detail": str(exc)}
@@ -221,16 +271,18 @@ def translate_file(
         return result
 
     with tempfile.TemporaryDirectory() as tmp:
-        stem = os.path.basename(matlab_path).rsplit(".", 1)[0]
+        stem = os.path.basename(file_label).rsplit(".", 1)[0]
         if reverse:
             matlab_path = os.path.join(tmp, stem + ".m")
             py_path = os.path.join(tmp, stem + ".py")
             with open(matlab_path, "w", encoding="utf-8") as f:
                 f.write(result["python"])
             with open(py_path, "w", encoding="utf-8") as f:
-                with open(result["file"], "r", encoding="utf-8") as src:
-                    f.write(src.read())
+                f.write(source)
         else:
+            matlab_path = os.path.join(tmp, stem + ".m")
+            with open(matlab_path, "w", encoding="utf-8") as f:
+                f.write(source)
             py_path = os.path.join(tmp, stem + ".py")
             with open(py_path, "w", encoding="utf-8") as f:
                 f.write(result["python"])

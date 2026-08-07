@@ -5,7 +5,7 @@ import numpy as np
 
 from reader import PYTHON_TO_MATLAB
 from tests.paths import sample_matlab, sample_python
-from translator import translate_file
+from translator import translate_file, translate_source
 
 FAKE_RESPONSE = """CODE
 import numpy as np
@@ -169,6 +169,47 @@ class TestTranslateFile(unittest.TestCase):
             if "UNRESOLVED: n = np.arange(N)" in line
         )
         self.assertIn(unresolved_index, result["problems"])
+
+
+class TestTranslateSource(unittest.TestCase):
+    def test_forward_from_matlab_text(self):
+        result = translate_source("fs = 1000;\nP1 = fft(x);\n")
+        self.assertEqual(result["status"], "ok")
+        self.assertEqual(result["direction"], "matlab_to_python")
+        self.assertEqual(result["sections"]["rulebook"]["unresolved"], 0)
+        self.assertIn("import numpy as np", result["python"])
+        self.assertEqual(result["source"], "fs = 1000;\nP1 = fft(x);\n")
+
+    def test_reverse_from_python_text(self):
+        result = translate_source(
+            "A = np.array([[1, 2], [3, 4]])\nprint(A[0, 0])\n",
+            direction=PYTHON_TO_MATLAB,
+        )
+        self.assertEqual(result["status"], "ok")
+        self.assertEqual(result["direction"], "python_to_matlab")
+        self.assertIn("A = [1 2; 3 4];", result["python"])
+        self.assertIn("disp(A(1, 1));", result["python"])
+
+    def test_reader_error_on_invalid_source(self):
+        result = translate_source("this is not matlab @@@", direction=PYTHON_TO_MATLAB)
+        self.assertEqual(result["status"], "error")
+        self.assertEqual(result["sections"]["reader"]["status"], "error")
+
+    def test_result_carries_source_and_file_label(self):
+        result = translate_source("x = 1;", name="custom.m")
+        self.assertEqual(result["file"], "custom.m")
+        self.assertEqual(result["source"], "x = 1;")
+
+    def test_default_file_label_for_python_direction(self):
+        result = translate_source("x = 1", direction=PYTHON_TO_MATLAB)
+        self.assertEqual(result["file"], "input.py")
+        result = translate_source("x = 1;")
+        self.assertEqual(result["file"], "input.m")
+
+    def test_translate_file_delegates_with_source(self):
+        result = translate_file(FFT_MATLAB)
+        self.assertEqual(result["file"], FFT_MATLAB)
+        self.assertIn("fs = 1000;", result["source"])
 
 
 if __name__ == "__main__":

@@ -19,20 +19,22 @@ def _matlab_parser():
     return _parser
 
 
-def _parse_matlab(path):
-    with open(path, "r", encoding="utf-8") as f:
-        source = f.read()
+def _parse_matlab(source):
     return _matlab_parser().parse(source.encode("utf-8"))
 
 
-def _parse_python(path):
-    with open(path, "r", encoding="utf-8") as f:
-        source = f.read()
+def _parse_python(source):
     return ast.parse(source)
 
 
-def load_structure(path, direction):
+def load_structure_from_source(source, direction):
     if direction not in DIRECTIONS:
         raise ValueError("direction must be one of %s" % (DIRECTIONS,))
-    tree = _parse_python(path) if direction == PYTHON_TO_MATLAB else _parse_matlab(path)
+    tree = _parse_python(source) if direction == PYTHON_TO_MATLAB else _parse_matlab(source)
     return build_structure(tree)
+
+
+def load_structure(path, direction):
+    with open(path, "r", encoding="utf-8") as f:
+        source = f.read()
+    return load_structure_from_source(source, direction)

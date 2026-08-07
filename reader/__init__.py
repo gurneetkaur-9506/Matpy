@@ -6,6 +6,7 @@ from .load_structure import (
     MATLAB_TO_PYTHON,
     PYTHON_TO_MATLAB,
     load_structure,
+    load_structure_from_source,
 )
 from .structure import build_structure, structure_to_dict
 
@@ -18,5 +19,6 @@ __all__ = [
     "load_matlab_file",
     "load_python_file",
     "load_structure",
+    "load_structure_from_source",
     "structure_to_dict",
 ]

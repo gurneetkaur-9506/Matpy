@@ -12,7 +12,6 @@ from PyQt5.QtWidgets import (
     QPlainTextEdit,
     QPushButton,
     QSplitter,
-    QStackedWidget,
     QToolButton,
     QVBoxLayout,
     QWidget,
@@ -22,7 +21,7 @@ from repo_paths import sample_matlab
 from checker import accuracy, build_translation_report
 from reader import MATLAB_TO_PYTHON, PYTHON_TO_MATLAB
 from reference_store import save_reference_entry
-from translator import translate_file
+from translator import translate_source
 from ui.highlight import ProblemLineHighlighter
 from ui.summary import accuracy_style, accuracy_text, report_text, status_line
 
@@ -77,7 +76,9 @@ class MinimalTranslatorWindow(QMainWindow):
         self.matlab_path = matlab_path
 
         self.matlab_pane = QPlainTextEdit()
-        self.matlab_pane.setReadOnly(True)
+        self.matlab_pane.setPlaceholderText(
+            "Type or paste source here, or load a file with Open file"
+        )
         self.source_label = QLabel("Source: MATLAB")
         self.output_label = QLabel("Output: Python")
         self.python_pane = QPlainTextEdit()
@@ -88,13 +89,11 @@ class MinimalTranslatorWindow(QMainWindow):
         self.splitter.addWidget(self.python_pane)
         self.splitter.setSizes([500, 500])
 
-        self.placeholder = self._build_placeholder()
-        self.stack = QStackedWidget()
-        self.stack.addWidget(self.placeholder)
-        self.stack.addWidget(self.splitter)
-
         self.translate_button = QPushButton("Translate")
         self.translate_button.clicked.connect(self._translate)
+
+        self.open_button = QPushButton("Open file")
+        self.open_button.clicked.connect(self._open_file)
 
         self.save_button = QPushButton("Save correction")
         self.save_button.clicked.connect(self._save_correction)
@@ -107,6 +106,7 @@ class MinimalTranslatorWindow(QMainWindow):
         buttons = QHBoxLayout()
         buttons.addWidget(self.direction_combo)
         buttons.addWidget(self.translate_button)
+        buttons.addWidget(self.open_button)
         buttons.addStretch(1)
         buttons.addWidget(self.save_button)
 
@@ -173,33 +173,13 @@ class MinimalTranslatorWindow(QMainWindow):
         layout.addWidget(self.details_widget)
         layout.addWidget(self.report_widget)
         layout.addLayout(pane_labels)
-        layout.addWidget(self.stack)
+        layout.addWidget(self.splitter)
         central.setLayout(layout)
         self.setCentralWidget(central)
 
         self.statusBar().showMessage("Ready")
         if matlab_path:
             self.load_matlab(matlab_path)
-        else:
-            self.stack.setCurrentWidget(self.placeholder)
-
-    def _build_placeholder(self):
-        widget = QWidget()
-        layout = QVBoxLayout()
-        layout.addStretch(1)
-        message = QLabel("Open a MATLAB or Python file to translate it")
-        message.setAlignment(Qt.AlignCenter)
-        layout.addWidget(message)
-        open_button = QPushButton("Open")
-        open_button.clicked.connect(self._open_file)
-        button_row = QHBoxLayout()
-        button_row.addStretch(1)
-        button_row.addWidget(open_button)
-        button_row.addStretch(1)
-        layout.addLayout(button_row)
-        layout.addStretch(1)
-        widget.setLayout(layout)
-        return widget
 
     def _open_file(self):
         path, _ = QFileDialog.getOpenFileName(
@@ -221,20 +201,25 @@ class MinimalTranslatorWindow(QMainWindow):
     def load_matlab(self, path):
         self.matlab_path = path
         self.matlab_pane.setPlainText(_read_text(path))
-        self.stack.setCurrentWidget(self.splitter)
         self.setWindowTitle("MATPY Translator - %s" % path)
         self.statusBar().showMessage("Loaded %s" % path)
 
     def _save_correction(self):
-        if not self.matlab_path:
-            self.statusBar().showMessage("No MATLAB file loaded")
+        matlab_source = self.matlab_pane.toPlainText()
+        python_source = self.python_pane.toPlainText()
+        if not matlab_source.strip():
+            self.statusBar().showMessage("No source to save")
             return
-        base_name = os.path.basename(self.matlab_path).rsplit(".", 1)[0]
+        if not python_source.strip():
+            self.statusBar().showMessage("No translated output to save")
+            return
+        if self.matlab_path:
+            base_name = os.path.basename(self.matlab_path).rsplit(".", 1)[0]
+        else:
+            base_name = "typed_source"
         try:
             matlab_path, python_path = save_reference_entry(
-                self.matlab_pane.toPlainText(),
-                self.python_pane.toPlainText(),
-                base_name,
+                matlab_source, python_source, base_name
             )
         except Exception as exc:
             self.statusBar().showMessage("Save failed: %s" % exc)
@@ -286,11 +271,14 @@ class MinimalTranslatorWindow(QMainWindow):
             self._set_section_marker(stage, info["status"])
 
     def _translate(self):
-        if not self.matlab_path:
-            self.statusBar().showMessage("No MATLAB file loaded")
+        source = self.matlab_pane.toPlainText()
+        if not source.strip():
+            self.statusBar().showMessage("Enter or load source first")
             return
         try:
-            result = translate_file(self.matlab_path, direction=self.current_direction())
+            result = translate_source(
+                source, direction=self.current_direction(), name=self.matlab_path
+            )
         except Exception as exc:
             self.statusBar().showMessage("Translation failed: %s" % exc)
             self._set_section_marker("checker", "failed")
@@ -312,19 +300,6 @@ class MinimalTranslatorWindow(QMainWindow):
             score = accuracy(result)["score"]
         self.accuracy_label.setText(accuracy_text(score))
         self.accuracy_label.setStyleSheet(accuracy_style(score))
-
-    def _save_correction(self):
-        if not self.matlab_path:
-            self.statusBar().showMessage("No MATLAB file loaded")
-            return
-        path = self.reference_path()
-        try:
-            with open(path, "w", encoding="utf-8") as f:
-                f.write(self.python_pane.toPlainText())
-        except Exception as exc:
-            self.statusBar().showMessage("Save failed: %s" % exc)
-            return
-        self.statusBar().showMessage("Saved correction to %s" % path)
 
 
 def main():
