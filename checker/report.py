@@ -5,6 +5,7 @@ flattens the three kinds of findings the pipeline produces into a single list
 of dicts, one per issue:
 
     * rulebook lines that were left UNRESOLVED,
+    * rulebook lines whose generated Python does not parse (syntax errors),
     * Assistant drafts that failed or were flagged with low confidence,
     * Checker verdicts of "failed", "review needed", or
       "inconclusive_no_matlab".
@@ -16,7 +17,10 @@ the pipeline attempted, and a plain-language reason -- never a stack trace.
 
 import re
 
+from reader import PYTHON_TO_MATLAB
 from rulebook import UNRESOLVED
+
+from .accuracy import syntax_error
 
 LOW_CONFIDENCE = 0.5
 
@@ -37,6 +41,9 @@ def _normalized_kind(stmt):
 
 
 def _source_lines(result):
+    source = result.get("source")
+    if source:
+        return source.splitlines()
     path = result.get("file")
     if not path:
         return []
@@ -212,6 +219,37 @@ def _assistant_entries(result, source_lines):
     return entries
 
 
+def _syntax_entries(result, source_lines):
+    """Flag rulebook lines whose translated Python does not parse.
+
+    A line that fails ast.parse cannot be trusted even if the rulebook
+    matched it, so it is reported as a syntax error.  Only forward
+    (MATLAB -> Python) output is validated; in the reverse direction the
+    "python" key is the input, not generated code.
+    """
+    if result.get("direction") == PYTHON_TO_MATLAB:
+        return []
+    entries = []
+    for stmt in _all_statements(result):
+        if stmt.get("python") == UNRESOLVED:
+            continue
+        reason = syntax_error(stmt)
+        if reason is None:
+            continue
+        source = stmt.get("source") or ""
+        entries.append(
+            {
+                "line": _locate(source, source_lines),
+                "source": source,
+                "issue": "syntax error",
+                "stage": "rulebook",
+                "attempted": _attempted_text(stmt),
+                "reason": reason,
+            }
+        )
+    return entries
+
+
 def _checker_entries(result):
     checker = (result.get("sections") or {}).get("checker") or {}
     status = checker.get("status")
@@ -263,8 +301,9 @@ def build_translation_report(result):
             line:      1-based line number in the original source, or None
                        when it cannot be located (e.g. a whole-file verdict).
             source:    the original source text of the problematic line.
-            issue:     "unresolved", "low confidence", "assistant error",
-                       "failed", "review needed", or "inconclusive_no_matlab".
+            issue:     "unresolved", "syntax error", "low confidence",
+                       "assistant error", "failed", "review needed", or
+                       "inconclusive_no_matlab".
             stage:     the pipeline stage that reported it: "rulebook",
                        "assistant", or "checker".
             attempted: what that stage tried to do.
@@ -277,6 +316,7 @@ def build_translation_report(result):
         for stmt in _all_statements(result)
         if _is_unresolved(stmt)
     ]
+    report.extend(_syntax_entries(result, source_lines))
     report.extend(_assistant_entries(result, source_lines))
     report.extend(_checker_entries(result))
     return report

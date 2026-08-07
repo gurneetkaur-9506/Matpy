@@ -38,7 +38,12 @@ def _stmt(kind, source, unresolved=True, body=None):
     stmt = {"kind": kind, "source": source}
     if body is not None:
         stmt["body"] = body
-    stmt["python"] = UNRESOLVED if unresolved else "%s -> ok" % source
+    if unresolved:
+        stmt["python"] = UNRESOLVED
+    elif kind == "loop":
+        stmt["python"] = "for _ in range(1):"
+    else:
+        stmt["python"] = "x = 1"
     return stmt
 
 
@@ -135,6 +140,68 @@ class TestBuildTranslationReport(unittest.TestCase):
         self.assertEqual(len(report), 1)
         self.assertEqual(report[0]["issue"], "unresolved")
         self.assertEqual(report[0]["source"], "n = np.arange(N)")
+
+
+class TestSyntaxErrorEntries(unittest.TestCase):
+    def test_syntax_invalid_statement_reported(self):
+        stmt = {
+            "kind": "assignment",
+            "source": "k = 2 * pi / lambda;",
+            "python": "k = 2 * pi / lambda",
+        }
+        report = build_translation_report(_result(statements=[stmt]))
+        self.assertEqual(len(report), 1)
+        entry = report[0]
+        self.assertEqual(entry["issue"], "syntax error")
+        self.assertEqual(entry["stage"], "rulebook")
+        self.assertEqual(entry["source"], "k = 2 * pi / lambda;")
+        self.assertIn("does not parse", entry["reason"])
+        self.assertNotIn("Traceback", entry["reason"])
+
+    def test_loop_with_invalid_body_reported_for_loop_and_line(self):
+        body = [
+            {
+                "kind": "assignment",
+                "source": "af = af + exp(1i * (n - 1) * phase);",
+                "python": "af = af + np.exp(1i * (n - 1) * phase)",
+            }
+        ]
+        loop = {
+            "kind": "loop",
+            "source": "for n = 1:N",
+            "python": "for n in range(N):",
+            "body": body,
+        }
+        result = _result(functions=[_func("f", [loop])])
+        report = build_translation_report(result)
+        issues = [e["issue"] for e in report]
+        self.assertEqual(issues, ["syntax error", "syntax error"])
+        sources = {e["source"] for e in report}
+        self.assertEqual(sources, {"for n = 1:N", "af = af + exp(1i * (n - 1) * phase);"})
+
+    def test_valid_statement_not_reported_as_syntax_error(self):
+        stmt = {
+            "kind": "assignment",
+            "source": "y = x;",
+            "python": "y = x",
+        }
+        self.assertEqual(build_translation_report(_result(statements=[stmt])), [])
+
+    def test_syntax_check_skipped_in_reverse_direction(self):
+        stmt = {
+            "kind": "Assign",
+            "source": "return af",
+            "python": "return af",
+            "matlab": "return af;",
+        }
+        result = {
+            "file": None,
+            "direction": "python_to_matlab",
+            "functions": [],
+            "statements": [stmt],
+            "sections": {"checker": {"status": "skipped"}},
+        }
+        self.assertEqual(build_translation_report(result), [])
 
 
 class TestLineNumbers(unittest.TestCase):
@@ -240,13 +307,27 @@ class TestCheckerVerdicts(unittest.TestCase):
 
 
 class TestReportWithBeamform(unittest.TestCase):
-    def test_beamform_basic_forward_is_fully_resolved(self):
+    def test_beamform_basic_forward_flags_syntax_errors(self):
         result = translate_file(BEAMFORM_MATLAB)
         report = build_translation_report(result)
         issues = [e["issue"] for e in report]
-        self.assertNotIn("unresolved", issues)
-        self.assertNotIn("low confidence", issues)
-        self.assertEqual(issues, ["inconclusive_no_matlab"])
+        self.assertEqual(
+            issues, ["syntax error", "syntax error", "syntax error", "inconclusive_no_matlab"]
+        )
+        syntax = [e for e in report if e["issue"] == "syntax error"]
+        sources = {e["source"] for e in syntax}
+        self.assertEqual(
+            sources,
+            {
+                "k = 2 * pi / lambda",
+                "af = af + exp(1i * (n - 1) * phase)",
+                "for n = 1:N",
+            },
+        )
+        for entry in syntax:
+            self.assertEqual(entry["stage"], "rulebook")
+            self.assertNotIn("Traceback", entry["reason"])
+            self.assertNotIn("raise ", entry["reason"])
 
     @mock.patch(
         "assistant.draft_translation._call_ollama",

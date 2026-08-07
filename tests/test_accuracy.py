@@ -139,6 +139,50 @@ class TestAccuracy(unittest.TestCase):
         self.assertEqual(result["score"], 0.0)
         self.assertEqual(result["total_lines"], 0)
 
+    def test_syntax_invalid_statement_downgraded(self):
+        stmts = [
+            {
+                "kind": "assignment",
+                "source": "k = 2 * pi / lambda;",
+                "python": "k = 2 * pi / lambda",
+            },
+            {"kind": "assignment", "source": "y = x;", "python": "y = x"},
+        ]
+        func = {"name": "f", "parameters": [], "outputs": [], "statements": stmts}
+        scored = accuracy(_result(total=2, functions=[func]))
+        self.assertEqual(scored["total_lines"], 2)
+        self.assertEqual(scored["score"], 50.0)
+        self.assertEqual(scored["breakdown"]["rulebook"], 1.0)
+        self.assertEqual(scored["breakdown"]["unresolved"], 0.0)
+
+    def test_loop_with_invalid_body_downgraded(self):
+        body = [
+            {
+                "kind": "assignment",
+                "source": "af = af + exp(1i * (n - 1) * phase);",
+                "python": "af = af + np.exp(1i * (n - 1) * phase)",
+            }
+        ]
+        loop = {
+            "kind": "loop",
+            "source": "for n = 1:N",
+            "python": "for n in range(N):",
+            "body": body,
+        }
+        good = {"kind": "assignment", "source": "y = x;", "python": "y = x"}
+        func = {"name": "f", "parameters": [], "outputs": [], "statements": [good, loop]}
+        scored = accuracy(_result(total=2, functions=[func]))
+        self.assertEqual(scored["score"], 50.0)
+
+    def test_reverse_direction_not_syntax_checked(self):
+        stmts = [{"kind": "Return", "source": "return af", "matlab": "return af"}]
+        func = {"name": "f", "parameters": [], "outputs": [], "statements": stmts}
+        result = _result(total=1, functions=[func])
+        result["direction"] = PYTHON_TO_MATLAB
+        scored = accuracy(result)
+        self.assertEqual(scored["score"], 100.0)
+        self.assertEqual(scored["breakdown"], {"rulebook": 1.0})
+
 
 class TestAccuracyIntegration(unittest.TestCase):
     def test_fft_basic_fully_resolved_scores_100(self):
