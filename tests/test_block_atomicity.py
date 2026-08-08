@@ -81,6 +81,82 @@ BLOCK_SHAPES = {
             "    end"
         ),
     },
+    "triple_nested_for_if_elseif_else": {
+        "matlab": (
+            "function y = foo(A)\n"
+            "    for i = 1:3\n"
+            "        for j = 1:3\n"
+            "            for k = 1:3\n"
+            "                if A(i, j, k) > 0\n"
+            "                    y = y + 1;\n"
+            "                elseif A(i, j, k) < 0\n"
+            "                    y = y - 1;\n"
+            "                else\n"
+            "                    y = y;\n"
+            "                end\n"
+            "            end\n"
+            "        end\n"
+            "    end\n"
+            "end\n"
+        ),
+        "block": (
+            "for i = 1:3\n"
+            "        for j = 1:3\n"
+            "            for k = 1:3\n"
+            "                if A(i, j, k) > 0\n"
+            "                    y = y + 1;\n"
+            "                elseif A(i, j, k) < 0\n"
+            "                    y = y - 1;\n"
+            "                else\n"
+            "                    y = y;\n"
+            "                end\n"
+            "            end\n"
+            "        end\n"
+            "    end"
+        ),
+    },
+    "triple_nested_for_mixed_ifs": {
+        "matlab": (
+            "function y = foo(A)\n"
+            "    for i = 1:3\n"
+            "        if i > 1\n"
+            "            for j = 1:3\n"
+            "                if j > 1\n"
+            "                    for k = 1:3\n"
+            "                        if A(i, j, k) > 0\n"
+            "                            y = y + 1;\n"
+            "                        elseif A(i, j, k) < 0\n"
+            "                            y = y - 1;\n"
+            "                        else\n"
+            "                            y = y;\n"
+            "                        end\n"
+            "                    end\n"
+            "                end\n"
+            "            end\n"
+            "        end\n"
+            "    end\n"
+            "end\n"
+        ),
+        "block": (
+            "for i = 1:3\n"
+            "        if i > 1\n"
+            "            for j = 1:3\n"
+            "                if j > 1\n"
+            "                    for k = 1:3\n"
+            "                        if A(i, j, k) > 0\n"
+            "                            y = y + 1;\n"
+            "                        elseif A(i, j, k) < 0\n"
+            "                            y = y - 1;\n"
+            "                        else\n"
+            "                            y = y;\n"
+            "                        end\n"
+            "                    end\n"
+            "                end\n"
+            "            end\n"
+            "        end\n"
+            "    end"
+        ),
+    },
     "switch_case": {
         "matlab": (
             "function y = foo(x)\n"
@@ -231,6 +307,18 @@ class TestUnresolvableBlockAtomicity(unittest.TestCase):
         self._assert_whole_block_comment(code, shape["block"])
         self._assert_no_partial_mix(code, shape["block"])
 
+    def test_triple_nested_for_if_elseif_else(self):
+        shape = BLOCK_SHAPES["triple_nested_for_if_elseif_else"]
+        code = self._assert_safe_output(shape["matlab"], shape["block"])
+        self._assert_whole_block_comment(code, shape["block"])
+        self._assert_no_partial_mix(code, shape["block"])
+
+    def test_triple_nested_for_mixed_ifs(self):
+        shape = BLOCK_SHAPES["triple_nested_for_mixed_ifs"]
+        code = self._assert_safe_output(shape["matlab"], shape["block"])
+        self._assert_whole_block_comment(code, shape["block"])
+        self._assert_no_partial_mix(code, shape["block"])
+
     def test_switch_case(self):
         shape = BLOCK_SHAPES["switch_case"]
         code = self._assert_safe_output(shape["matlab"], shape["block"])
@@ -245,6 +333,14 @@ class TestUnresolvableBlockAtomicity(unittest.TestCase):
 
     def test_unresolved_block_has_no_surviving_body(self):
         shape = BLOCK_SHAPES["nested_for_for_if"]
+        result = _translate_matlab(shape["matlab"])
+        for func in result["functions"]:
+            for stmt in func["statements"]:
+                if stmt.get("python") == UNRESOLVED:
+                    self.assertNotIn("body", stmt)
+
+    def test_deep_unresolved_block_has_no_surviving_body(self):
+        shape = BLOCK_SHAPES["triple_nested_for_if_elseif_else"]
         result = _translate_matlab(shape["matlab"])
         for func in result["functions"]:
             for stmt in func["statements"]:
@@ -267,6 +363,32 @@ class TestBlockInvariantFunction(unittest.TestCase):
         code = code_for_result(result)
         ast.parse(code)
         self.assertIn("for n in range(N):", code)
+
+    def test_triple_nested_for_fully_translated(self):
+        """The atomic-block invariant is depth-independent on the resolved
+        side too: a 3-level nested for loop whose innermost body translates
+        cleanly is emitted as fully nested Python, never collapsed."""
+        matlab = (
+            "function S = nested(N)\n"
+            "    S = 0;\n"
+            "    for i = 1:N\n"
+            "        for j = 1:N\n"
+            "            for k = 1:N\n"
+            "                S = S + i + j + k;\n"
+            "            end\n"
+            "        end\n"
+            "    end\n"
+            "end\n"
+        )
+        result = _translate_matlab(matlab)
+        assert_block_invariant(result)
+        code = code_for_result(result)
+        ast.parse(code)
+        self.assertNotIn(UNRESOLVED, code)
+        self.assertIn("for i in range(N):", code)
+        self.assertIn("for j in range(N):", code)
+        self.assertIn("for k in range(N):", code)
+        self.assertIn("S = S + i + j + k", code)
 
     def test_assert_block_invariant_detects_partial_body(self):
         result = {
