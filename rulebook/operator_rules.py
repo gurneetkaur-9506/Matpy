@@ -191,10 +191,65 @@ def _find_last_operator(expr):
     return None, None
 
 
+def _split_transpose(expr):
+    """Split a MATLAB postfix transpose operator off the end of ``expr``.
+
+    Returns ``(base, kind)`` where ``kind`` is ``"conj"`` for ``expr'``
+    (conjugate transpose) or ``"plain"`` for ``expr.'``, or None when
+    ``expr`` does not end in a transpose operator.  The rule applies to any
+    expression the operator follows: a plain variable, a function-call
+    result, an indexed expression, or a parenthesized compound expression.
+    A single-quoted string literal is not a transpose.
+    """
+    expr = expr.strip()
+    if not expr or expr[-1] != "'":
+        return None
+    if _is_string_literal(expr):
+        return None
+    if len(expr) >= 2 and expr[-2] == ".":
+        return expr[:-2].strip(), "plain"
+    return expr[:-1].strip(), "conj"
+
+
+def _is_string_literal(expr):
+    """True when ``expr`` is a single-quoted MATLAB string literal (e.g.
+    'abc' or 'it''s'), so its trailing quote is not a transpose operator."""
+    expr = expr.strip()
+    if not expr.startswith("'"):
+        return False
+    i = 1
+    n = len(expr)
+    while i < n:
+        if expr[i] == "'":
+            if i + 1 < n and expr[i + 1] == "'":
+                i += 2
+                continue
+            return i == n - 1
+        i += 1
+    return False
+
+
+def apply_transpose_rule(base, transpose_kind):
+    """Map a transposed expression to its Python form.
+
+    ``expr'``  (conjugate transpose) -> ``np.conj(expr).T``
+    ``expr.'`` (plain transpose)     -> ``expr.T``
+    """
+    if transpose_kind == "plain":
+        return "%s.T" % base
+    return "np.conj(%s).T" % base
+
+
 def apply_operator_rule(expr):
     expr = expr.strip()
     idx, op = _find_last_operator(expr)
     if op is None:
+        transposed = _split_transpose(expr)
+        if transposed is not None:
+            base, transpose_kind = transposed
+            return apply_transpose_rule(
+                apply_operator_rule(base), transpose_kind
+            )
         return expr
 
     left = apply_operator_rule(expr[:idx])
@@ -219,6 +274,10 @@ def apply_operator_rule(expr):
             return "%s / %s" % (left, right)
         template = OPERATOR_RULES["matrix_right_divide"]["python"]
         return template % (right, left)
+    if op in ("+", "-"):
+        # Rebuild so postfix transposes on the operands (e.g. ``A + B'``)
+        # are preserved; '+'/'-' map to themselves.
+        return "%s %s %s" % (left, op, right)
     return expr
 
 

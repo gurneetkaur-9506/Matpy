@@ -8,7 +8,9 @@ from .indexing_rules import apply_indexing_rule, apply_indexing_rule_reverse
 from .multi_output_rules import translate_multi_output_assignment
 from .operator_rules import (
     _find_last_operator,
+    _split_transpose,
     apply_operator_rule_reverse,
+    apply_transpose_rule,
     is_scalar_like,
 )
 
@@ -342,6 +344,18 @@ def _translate_expr(expr, scalars=None, declared=None):
 
     idx, op = _find_last_operator(expr)
     if op is None:
+        # MATLAB postfix transpose (expr' / expr.') applies to any
+        # expression -- a variable, a call result, an indexed expression,
+        # or a parenthesized compound -- and binds more tightly than any
+        # binary operator, so it is resolved only once no binary operator
+        # remains at the top level (operands reach here through recursion).
+        transposed = _split_transpose(expr)
+        if transposed is not None:
+            base, transpose_kind = transposed
+            base_py = _translate_expr(base, scalars, declared)
+            if base_py == UNRESOLVED:
+                return UNRESOLVED
+            return apply_transpose_rule(base_py, transpose_kind)
         return apply_complex_rule(expr)
 
     left_py = _translate_expr(expr[:idx], scalars, declared)
