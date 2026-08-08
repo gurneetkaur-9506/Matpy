@@ -9,6 +9,13 @@ Python decomposition, instead of special-casing a single function:
 - sort     -> (sorted_values, indices) as ``np.sort`` / ``np.argsort``
 - size     -> (dim1, dim2, ...) via ``x.shape`` tuple unpacking
 - find     -> (row, col) via ``np.where``
+
+Nested reduction functions of any depth are resolved recursively: the
+outermost call is the registered multi-output function, and everything
+below it is peeled off one layer at a time (max/min/sum/mean wrapping
+abs/transpose/other reductions) from the innermost operation outward:
+``[v, i] = max(max(abs(X')))`` becomes ``np.max(np.max(np.abs(np.conj(X).T)))``
+for the value and the same expression inside ``np.argmax`` for the index.
 """
 
 import re
@@ -49,6 +56,17 @@ MULTI_OUTPUT_RULES = {
     },
     "size": {"kind": "shape"},
     "find": {"kind": "where"},
+}
+
+# Single-output reduction functions that may wrap other reductions inside
+# a multi-output assignment.  In MATLAB these reduce an array; the numpy
+# equivalent is a plain ``np.<name>(...)`` call.  Peeling them outward
+# lets the resolver compose arbitrary nesting depths.
+_REDUCTION_CALLS = {
+    "max": "np.max",
+    "min": "np.min",
+    "sum": "np.sum",
+    "mean": "np.mean",
 }
 
 
@@ -130,6 +148,33 @@ def _is_string_literal(text):
     return bool(_STRING_LITERAL_RE.fullmatch(text.strip()))
 
 
+def _resolve_nested(expr, translate_arg):
+    """Resolve a nested reduction expression outward, one layer at a time.
+
+    The outermost call of a multi-output assignment (e.g. ``max``) is
+    handled by the registry's own rule; everything below it may itself be
+    a chain of reduction functions (max/min/sum/mean) wrapping abs,
+    transpose, or other calls.  This resolver identifies the innermost
+    operation and composes the numpy equivalent outward:
+
+        max(max(abs(X')))  ->  np.max(np.abs(np.conj(X).T))
+
+    ``translate_arg`` handles the innermost non-reduction operand (an
+    identifier, an abs() call, a transpose, ...).
+    """
+    call = _split_call(expr)
+    if call is not None:
+        name, argtext = call
+        if name in _REDUCTION_CALLS:
+            args = [a for a in _split_top_level(argtext, ",") if a.strip()]
+            if len(args) == 1:
+                inner = _resolve_nested(args[0], translate_arg)
+                if inner == UNRESOLVED:
+                    return UNRESOLVED
+                return "%s(%s)" % (_REDUCTION_CALLS[name], inner)
+    return translate_arg(expr)
+
+
 def _dim_to_axis(dim):
     if dim.isdigit():
         return str(int(dim) - 1)
@@ -149,14 +194,14 @@ def _translate_pair(targets, args, translate_arg, rule):
         real_args.append(a.strip())
 
     if len(real_args) == 1:
-        arg = translate_arg(real_args[0])
+        arg = _resolve_nested(real_args[0], translate_arg)
         if arg == UNRESOLVED:
             return None
         call = "%s(%s)" % (rule["value"], arg)
         index_call = "%s(%s)" % (rule["index"], arg)
     elif len(real_args) == 3 and real_args[1] == "[]" and rule.get("options") is None:
         # max(x, [], dim) / min(x, [], dim): reduce along a dimension.
-        base = translate_arg(real_args[0])
+        base = _resolve_nested(real_args[0], translate_arg)
         if base == UNRESOLVED:
             return None
         axis = _dim_to_axis(real_args[2].strip())

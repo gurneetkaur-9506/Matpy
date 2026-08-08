@@ -174,6 +174,57 @@ class TestTranslateStatementIntegration(unittest.TestCase):
         )
 
 
+class TestNestedReductions(unittest.TestCase):
+    """Multi-output assignments wrapping nested reduction functions of
+    arbitrary depth, resolved innermost-first (max/min/sum/mean wrapping
+    abs/transpose/other reductions)."""
+
+    def _python(self, text):
+        return _translate_statement(Statement("assignment", text))["python"]
+
+    def test_nested_same_reduction(self):
+        self.assertEqual(
+            self._python("[v, i] = max(max(X))"),
+            "v = np.max(np.max(X))\ni = np.argmax(np.max(X))",
+        )
+
+    def test_nested_min_sum_abs(self):
+        self.assertEqual(
+            self._python("[v, i] = min(sum(abs(X)))"),
+            "v = np.min(np.sum(np.abs(X)))\ni = np.argmin(np.sum(np.abs(X)))",
+        )
+
+    def test_nested_max_mean_transpose(self):
+        self.assertEqual(
+            self._python("[v, i] = max(mean(X'))"),
+            "v = np.max(np.mean(np.conj(X).T))\ni = np.argmax(np.mean(np.conj(X).T))",
+        )
+
+    def test_three_level_nested_max_abs_transpose(self):
+        self.assertEqual(
+            self._python("[v, i] = max(max(abs(X')))"),
+            (
+                "v = np.max(np.max(np.abs(np.conj(X).T)))\n"
+                "i = np.argmax(np.max(np.abs(np.conj(X).T)))"
+            ),
+        )
+
+    def test_direct_multi_output_assignment_nested(self):
+        self.assertEqual(
+            translate_multi_output_assignment(
+                "[v, i]", "min(sum(abs(X)))", _translate("X")
+            ),
+            ["v = np.min(np.sum(np.abs(X)))", "i = np.argmin(np.sum(np.abs(X)))"],
+        )
+
+    def test_unknown_inner_falls_back_to_user_indexing(self):
+        self.assertEqual(
+            self._python("[v, i] = max(avg(X))"),
+            "v = np.max(avg[X])\ni = np.argmax(avg[X])",
+        )
+
+
+
 class TestMultiOutputFilePipeline(unittest.TestCase):
     def _translate_file(self, source):
         structure = load_structure_from_source(source, MATLAB_TO_PYTHON)
@@ -194,6 +245,23 @@ class TestMultiOutputFilePipeline(unittest.TestCase):
         self.assertIn("si = np.argsort(x)", python)
         self.assertIn("nr, nc = A.shape", python)
         self.assertIn("r, c = np.where(x > 0)", python)
+
+    def test_pipeline_nested_reductions(self):
+        source = (
+            "[v, i] = max(max(X));\n"
+            "[w, j] = min(sum(abs(X)));\n"
+            "[p, q] = max(mean(X'));\n"
+            "[m, n] = max(max(abs(X')));\n"
+        )
+        python = self._translate_file(source)
+        self.assertIn("v = np.max(np.max(X))", python)
+        self.assertIn("i = np.argmax(np.max(X))", python)
+        self.assertIn("w = np.min(np.sum(np.abs(X)))", python)
+        self.assertIn("j = np.argmin(np.sum(np.abs(X)))", python)
+        self.assertIn("p = np.max(np.mean(np.conj(X).T))", python)
+        self.assertIn("q = np.argmax(np.mean(np.conj(X).T))", python)
+        self.assertIn("m = np.max(np.max(np.abs(np.conj(X).T)))", python)
+        self.assertIn("n = np.argmax(np.max(np.abs(np.conj(X).T)))", python)
 
 
 if __name__ == "__main__":

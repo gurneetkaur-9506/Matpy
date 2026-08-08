@@ -227,16 +227,21 @@ def _translate_range(parts, scalars=None, declared=None):
 
 def _translate_builtin_call(name, argtext, scalars=None, declared=None):
     """Translate a builtin call, first resolving any nested call-like
-    arguments (user indexing or nested calls) and any colon-range
-    arguments with the full expression translator, so a known builtin
-    never swallows an unconverted ``name()`` indexing site or a range.
-    Range detection is the Reader's context-independent check, so it
-    applies to arguments in any syntactic context."""
+    arguments (user indexing or nested calls), any colon-range arguments,
+    and any postfix-transpose arguments with the full expression
+    translator, so a known builtin never swallows an unconverted ``name()``
+    indexing site, a range, or a transpose.  Range detection is the
+    Reader's context-independent check, so it applies to arguments in any
+    syntactic context."""
     args = _split_top_level(argtext, ",") if argtext.strip() else []
     translated = []
     for a in args:
         stripped = a.strip()
-        if re.match(r"[A-Za-z_][A-Za-z0-9_]*\s*\(", stripped) or is_range(stripped):
+        if (
+            re.match(r"[A-Za-z_][A-Za-z0-9_]*\s*\(", stripped)
+            or is_range(stripped)
+            or _split_transpose(stripped) is not None
+        ):
             inner = _translate_expr(stripped, scalars, declared)
             if inner == UNRESOLVED:
                 return UNRESOLVED
