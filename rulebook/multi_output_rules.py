@@ -58,10 +58,11 @@ MULTI_OUTPUT_RULES = {
     "find": {"kind": "where"},
 }
 
-# Single-output reduction functions that may wrap other reductions inside
-# a multi-output assignment.  In MATLAB these reduce an array; the numpy
-# equivalent is a plain ``np.<name>(...)`` call.  Peeling them outward
-# lets the resolver compose arbitrary nesting depths.
+# Reduction functions that map 1:1 onto numpy calls.  They are the single
+# source of truth for both the nested multi-output resolver (peeling
+# wrapped reductions outward) and the single-output reduction translation
+# in translator.py, where they compose with anything wrapped inside them
+# (abs, transpose, indexing, and above all find(cond) -> np.where(cond)[0]).
 _REDUCTION_CALLS = {
     "max": "np.max",
     "min": "np.min",

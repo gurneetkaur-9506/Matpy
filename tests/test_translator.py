@@ -117,6 +117,70 @@ class TestFindAndInterp1Rules(unittest.TestCase):
     def test_find_with_multiple_args_stays_unresolved(self):
         self.assertEqual(self._translate("i = find(a, b)"), UNRESOLVED)
 
+
+class TestFindReductionComposition(unittest.TestCase):
+    """find(cond) is a first-class expression mapping to
+    np.where(cond)[0], so any single-output reduction wrapping it composes
+    naturally: sum/mean/max/min/length/numel all reduce the index array."""
+
+    def _translate(self, text):
+        structure = Structure(statements=[Statement("assignment", text)])
+        return translate_with_rulebook(structure)["statements"][0]["python"]
+
+    def test_sum_of_find(self):
+        self.assertEqual(
+            self._translate("n = sum(find(x > 0))"),
+            "n = np.sum(np.where(x > 0)[0])",
+        )
+
+    def test_mean_of_find(self):
+        self.assertEqual(
+            self._translate("m = mean(find(x > 0))"),
+            "m = np.mean(np.where(x > 0)[0])",
+        )
+
+    def test_max_of_find(self):
+        self.assertEqual(
+            self._translate("mx = max(find(x > 0))"),
+            "mx = np.max(np.where(x > 0)[0])",
+        )
+
+    def test_min_of_find(self):
+        self.assertEqual(
+            self._translate("mn = min(find(x > 0))"),
+            "mn = np.min(np.where(x > 0)[0])",
+        )
+
+    def test_length_of_find(self):
+        self.assertEqual(
+            self._translate("nz = length(find(z ~= 0))"),
+            "nz = len(np.where(z != 0)[0])",
+        )
+
+    def test_numel_of_find(self):
+        self.assertEqual(
+            self._translate("nt = numel(find(z ~= 0))"),
+            "nt = len(np.where(z != 0)[0])",
+        )
+
+    def test_reduction_of_find_with_nested_condition(self):
+        self.assertEqual(
+            self._translate("m = mean(find(abs(x) > 1))"),
+            "m = np.mean(np.where(abs(x) > 1)[0])",
+        )
+
+    def test_reduction_of_find_composes_with_operators(self):
+        self.assertEqual(
+            self._translate("s = sum(find(x > 0) + 1)"),
+            "s = np.sum(np.where(x > 0)[0] + 1)",
+        )
+
+    def test_reduction_axis_forms_still_translate(self):
+        self.assertEqual(self._translate("s = sum(x, 1)"), "s = np.sum(x, axis=0)")
+        self.assertEqual(
+            self._translate("m = max(x, [], 2)"), "m = np.max(x, axis=1)"
+        )
+
     def test_interp1_reorders_args_to_np_interp(self):
         self.assertEqual(
             self._translate(

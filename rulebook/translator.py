@@ -7,7 +7,11 @@ from .builtin_rules import BUILTIN_RULES, apply_builtin_rule, apply_builtin_rule
 from .complex_rules import apply_complex_rule
 from .format_rules import convert_fprintf
 from .indexing_rules import apply_indexing_rule, apply_indexing_rule_reverse
-from .multi_output_rules import translate_multi_output_assignment
+from .multi_output_rules import (
+    _REDUCTION_CALLS,
+    _dim_to_axis,
+    translate_multi_output_assignment,
+)
 from .operator_rules import (
     _find_last_operator,
     _split_transpose,
@@ -26,8 +30,8 @@ _COMMANDS = {
 }
 
 _OTHER_BUILTINS = {
-    "clc", "clear", "close", "cos", "exp", "log", "max", "mean",
-    "min", "sin", "sqrt", "sum", "tan",
+    "clc", "clear", "close", "cos", "exp", "log",
+    "sin", "sqrt", "tan",
 }
 
 _PLOT_BUILTINS = {
@@ -252,6 +256,40 @@ def _translate_builtin_call(name, argtext, scalars=None, declared=None):
     return apply_builtin_rule(rebuilt)
 
 
+def _translate_reduction_call(name, argtext, scalars=None, declared=None):
+    """Translate a single-output reduction (max/min/sum/mean) into its
+    numpy equivalent.  A single argument reduces the whole array; the
+    MATLAB dimension forms -- ``sum(x, dim)`` / ``mean(x, dim)`` and
+    ``max(x, [], dim)`` / ``min(x, [], dim)`` -- become an explicit numpy
+    axis.  Arguments go through the full expression translator, so a
+    reduction composes naturally with anything wrapped inside it, most
+    notably ``find(cond)`` -> ``np.where(cond)[0]``."""
+    np_name = _REDUCTION_CALLS[name]
+    args = [a.strip() for a in _split_top_level(argtext, ",") if a.strip()]
+    if len(args) == 1:
+        translated = _translate_expr(args[0], scalars, declared)
+        if translated == UNRESOLVED:
+            return UNRESOLVED
+        return "%s(%s)" % (np_name, translated)
+    if len(args) == 2 and name in ("sum", "mean"):
+        axis = _dim_to_axis(args[1])
+        if axis is None:
+            return UNRESOLVED
+        translated = _translate_expr(args[0], scalars, declared)
+        if translated == UNRESOLVED:
+            return UNRESOLVED
+        return "%s(%s, axis=%s)" % (np_name, translated, axis)
+    if len(args) == 3 and name in ("max", "min") and args[1] == "[]":
+        axis = _dim_to_axis(args[2])
+        if axis is None:
+            return UNRESOLVED
+        translated = _translate_expr(args[0], scalars, declared)
+        if translated == UNRESOLVED:
+            return UNRESOLVED
+        return "%s(%s, axis=%s)" % (np_name, translated, axis)
+    return UNRESOLVED
+
+
 def _translate_expr(expr, scalars=None, declared=None):
     expr = expr.strip()
     if not expr:
@@ -293,6 +331,8 @@ def _translate_expr(expr, scalars=None, declared=None):
             if any(t == UNRESOLVED for t in translated):
                 return UNRESOLVED
             return "%s(%s)" % (_NUMPY_CALLS[name], ", ".join(translated))
+        if name in _REDUCTION_CALLS:
+            return _translate_reduction_call(name, argtext, scalars, declared)
         if name in _TRIG_DEGREES:
             translated = [
                 _translate_expr(a, scalars, declared)
