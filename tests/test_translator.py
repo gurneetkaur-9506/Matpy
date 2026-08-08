@@ -74,6 +74,114 @@ class TestPlotBuiltins(unittest.TestCase):
         )
 
 
+class TestPlotCommandTable(unittest.TestCase):
+    """Every MATLAB plot-styling/config command resolves through the single
+    PLOT_COMMANDS table row, whether it appears as a bare command (grid on,
+    axis equal) or a function call (xlim([0 10]), subplot(2,1,1))."""
+
+    def _statement(self, text):
+        structure = Structure(statements=[Statement("function_call", text)])
+        result = translate_with_rulebook(structure)
+        return result["statements"][0]["python"]
+
+    def _command(self, text):
+        structure = Structure(statements=[Statement("command", text)])
+        result = translate_with_rulebook(structure)
+        return result["statements"][0]["python"]
+
+    def test_xlim_with_args_flattens_limit_vector(self):
+        self.assertEqual(self._statement("xlim([a b])"), "plt.xlim([a, b])")
+        self.assertEqual(self._statement("xlim([0 10])"), "plt.xlim([0, 10])")
+
+    def test_ylim_with_args(self):
+        self.assertEqual(self._statement("ylim([-1 1])"), "plt.ylim([-1, 1])")
+
+    def test_axis_with_args_flattens_quad_vector(self):
+        self.assertEqual(
+            self._statement("axis([0 1 0 1])"), "plt.axis([0, 1, 0, 1])"
+        )
+
+    def test_axis_flags(self):
+        self.assertEqual(self._command("axis equal"), "plt.axis('equal')")
+        self.assertEqual(self._command("axis tight"), "plt.axis('tight')")
+        self.assertEqual(self._command("axis off"), "plt.axis('off')")
+
+    def test_grid_flags(self):
+        self.assertEqual(self._command("grid on"), "plt.grid(True)")
+        self.assertEqual(self._command("grid off"), "plt.grid(False)")
+
+    def test_colorbar(self):
+        self.assertEqual(self._command("colorbar"), "plt.colorbar()")
+
+    def test_hold_is_noop_comment(self):
+        self.assertEqual(
+            self._command("hold on"),
+            "# hold on: matplotlib holds axes by default",
+        )
+        self.assertEqual(
+            self._command("hold off"),
+            "# hold off: matplotlib holds axes by default",
+        )
+
+    def test_shading_is_noop_comment(self):
+        self.assertEqual(
+            self._command("shading flat"),
+            "# shading flat: matplotlib handles shading via the colormap",
+        )
+
+    def test_legend_command_and_call(self):
+        self.assertEqual(self._command("legend"), "plt.legend()")
+        self.assertEqual(self._statement("legend('a', 'b')"), "plt.legend('a', 'b')")
+
+    def test_subplot(self):
+        self.assertEqual(self._statement("subplot(2,1,1)"), "plt.subplot(2, 1, 1)")
+
+    def test_subplot_related_config(self):
+        self.assertEqual(self._command("gca"), "plt.gca()")
+        self.assertEqual(self._command("gcf"), "plt.gcf()")
+        self.assertEqual(self._command("cla"), "plt.cla()")
+        self.assertEqual(self._command("clf"), "plt.clf()")
+
+    def test_unknown_flag_stays_unresolved(self):
+        structure = Structure(statements=[Statement("command", "grid fancy")])
+        result = translate_with_rulebook(structure)
+        self.assertEqual(result["statements"][0]["python"], UNRESOLVED)
+
+    def test_unknown_command_stays_unresolved(self):
+        structure = Structure(statements=[Statement("command", "widgetx on")])
+        result = translate_with_rulebook(structure)
+        self.assertEqual(result["statements"][0]["python"], UNRESOLVED)
+
+    def test_pipeline_translates_plot_command_class(self):
+        source = (
+            "plot(f, P1);\n"
+            "grid on;\n"
+            "hold on;\n"
+            "shading flat;\n"
+            "axis equal;\n"
+            "colorbar;\n"
+            "xlim([a b]);\n"
+            "ylim([-1 1]);\n"
+            "legend('a', 'b');\n"
+            "subplot(2,1,1);\n"
+        )
+        structure = Structure(statements=[])
+        from reader import load_structure_from_source, MATLAB_TO_PYTHON
+
+        result = translate_with_rulebook(load_structure_from_source(source, MATLAB_TO_PYTHON))
+        python = "\n".join(s["python"] for s in result["statements"])
+        self.assertIn("plt.plot(f, P1)", python)
+        self.assertIn("plt.grid(True)", python)
+        self.assertIn("# hold on: matplotlib holds axes by default", python)
+        self.assertIn("# shading flat: matplotlib handles shading via the colormap", python)
+        self.assertIn("plt.axis('equal')", python)
+        self.assertIn("plt.colorbar()", python)
+        self.assertIn("plt.xlim([a, b])", python)
+        self.assertIn("plt.ylim([-1, 1])", python)
+        self.assertIn("plt.legend('a', 'b')", python)
+        self.assertIn("plt.subplot(2, 1, 1)", python)
+
+
 class TestLoopHandling(unittest.TestCase):
     @classmethod
     def setUpClass(cls):

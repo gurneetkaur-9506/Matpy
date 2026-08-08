@@ -105,8 +105,8 @@ class TestBuildTranslationReport(unittest.TestCase):
         self.assertIn("fft", build_translation_report(result)[0]["reason"])
 
     def test_reason_for_unknown_command(self):
-        result = _result(statements=[_stmt("command", "hold on")])
-        self.assertIn("hold on", build_translation_report(result)[0]["reason"])
+        result = _result(statements=[_stmt("command", "widgetx on")])
+        self.assertIn("widgetx on", build_translation_report(result)[0]["reason"])
 
     def test_reason_for_untranslatable_assignment(self):
         result = _result(statements=[_stmt("assignment", "x = interp1(a, b)")])

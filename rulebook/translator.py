@@ -34,15 +34,38 @@ _OTHER_BUILTINS = {
     "sin", "sqrt", "tan",
 }
 
-_PLOT_BUILTINS = {
-    "figure": "plt.figure",
-    "grid": "plt.grid",
-    "legend": "plt.legend",
-    "plot": "plt.plot",
-    "subplot": "plt.subplot",
-    "title": "plt.title",
-    "xlabel": "plt.xlabel",
-    "ylabel": "plt.ylabel",
+# General, table-driven mapping of the MATLAB plot-styling/config command
+# class to its matplotlib equivalent.  Adding a new plotting command is a
+# single table row; no per-command code.  A row's spec supports:
+#   "func"   matplotlib callable; arguments are translated and passed
+#            through (xlim([0 10]) -> plt.xlim([0, 10])).
+#   "flags"  bare-command flag words (grid on, axis equal) -> the call
+#            arguments to emit; a bare command with no flag emits a
+#            no-argument call (colorbar -> plt.colorbar()).
+#   "vector" the single argument is a limit vector flattened to a Python
+#            list, for matplotlib functions that want [xmin, xmax].
+#   "noop"   the command has no matplotlib equivalent; bare commands emit
+#            an explanatory comment instead of a call.
+PLOT_COMMANDS = {
+    "axis": {"func": "plt.axis", "vector": True, "flags": {"auto": "'auto'", "equal": "'equal'", "image": "'scaled'", "normal": "'auto'", "off": "'off'", "on": "'on'", "square": "'square'", "tight": "'tight'"}},
+    "axes": {"func": "plt.axes"},
+    "cla": {"func": "plt.cla"},
+    "clf": {"func": "plt.clf"},
+    "colorbar": {"func": "plt.colorbar"},
+    "figure": {"func": "plt.figure"},
+    "gca": {"func": "plt.gca"},
+    "gcf": {"func": "plt.gcf"},
+    "grid": {"func": "plt.grid", "flags": {"off": "False", "on": "True", "minor": "True, which='minor'"}},
+    "hold": {"noop": "matplotlib holds axes by default"},
+    "legend": {"func": "plt.legend"},
+    "plot": {"func": "plt.plot"},
+    "shading": {"noop": "matplotlib handles shading via the colormap"},
+    "subplot": {"func": "plt.subplot"},
+    "title": {"func": "plt.title"},
+    "xlabel": {"func": "plt.xlabel"},
+    "xlim": {"func": "plt.xlim", "vector": True},
+    "ylabel": {"func": "plt.ylabel"},
+    "ylim": {"func": "plt.ylim", "vector": True},
 }
 
 # MATLAB functions that map 1:1 onto a numpy call but whose arguments need
@@ -290,6 +313,44 @@ def _translate_reduction_call(name, argtext, scalars=None, declared=None):
     return UNRESOLVED
 
 
+_LIMIT_ARRAY = re.compile(r"^np\.array\(\[\[([^\[\]]*)\]\]\)$")
+
+
+def _flatten_limit_vector(translated):
+    """Flatten a single-row matrix argument into a Python list for the
+    limit-style matplotlib functions (xlim/ylim/axis), which want
+    ``[xmin, xmax]`` rather than a 2-D numpy array:
+    ``xlim([0 10])`` -> ``plt.xlim([0, 10])``."""
+    match = _LIMIT_ARRAY.match(translated)
+    if match is None:
+        return None
+    return "[%s]" % match.group(1)
+
+
+def _translate_plot_command(text):
+    """Translate a bare MATLAB plot-styling/config command statement (grid
+    on, hold on, shading flat, axis equal, colorbar, ...) through the
+    PLOT_COMMANDS table.  Returns the Python line, or None when the
+    command (or its flag word) is not in the table."""
+    parts = text.split()
+    if not parts:
+        return None
+    spec = PLOT_COMMANDS.get(parts[0])
+    if spec is None:
+        return None
+    if "noop" in spec:
+        return "# %s: %s" % (text, spec["noop"])
+    flag = parts[1] if len(parts) > 1 else None
+    flags = spec.get("flags")
+    if flag is not None:
+        if flags is None or flag not in flags:
+            return None
+        call_args = flags[flag]
+    else:
+        call_args = ""
+    return "%s(%s)" % (spec["func"], call_args)
+
+
 def _translate_expr(expr, scalars=None, declared=None):
     expr = expr.strip()
     if not expr:
@@ -347,11 +408,18 @@ def _translate_expr(expr, scalars=None, declared=None):
             )
         if name in BUILTIN_RULES:
             return _translate_builtin_call(name, argtext, scalars, declared)
-        if name in _PLOT_BUILTINS:
+        if name in PLOT_COMMANDS:
+            spec = PLOT_COMMANDS[name]
+            if "func" not in spec:
+                return UNRESOLVED
             translated = [_translate_expr(a, scalars, declared) for a in _split_top_level(argtext, ",")]
             if any(t == UNRESOLVED for t in translated):
                 return UNRESOLVED
-            return "%s(%s)" % (_PLOT_BUILTINS[name], ", ".join(translated))
+            if spec.get("vector") and len(translated) == 1:
+                flat = _flatten_limit_vector(translated[0])
+                if flat is not None:
+                    return "%s(%s)" % (spec["func"], flat)
+            return "%s(%s)" % (spec["func"], ", ".join(translated))
         if name in _OTHER_BUILTINS:
             return UNRESOLVED
         if name in ("length", "numel"):
@@ -564,6 +632,14 @@ def _translate_statement(stmt, scalars=None, declared=None):
                 "source": stmt.text,
                 "python": _COMMANDS[stmt.text],
                 "comment": _comment_for(stmt, _COMMANDS[stmt.text]),
+            }
+        plot_line = _translate_plot_command(stmt.text)
+        if plot_line is not None:
+            return {
+                "kind": stmt.kind,
+                "source": stmt.text,
+                "python": plot_line,
+                "comment": _comment_for(stmt, plot_line),
             }
         return {"kind": stmt.kind, "source": stmt.text, "python": UNRESOLVED}
 
