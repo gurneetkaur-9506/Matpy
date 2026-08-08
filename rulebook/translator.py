@@ -1,6 +1,8 @@
 import ast
 import re
 
+from reader.extract_structure import is_range, split_range
+
 from .builtin_rules import BUILTIN_RULES, apply_builtin_rule, apply_builtin_rule_reverse
 from .complex_rules import apply_complex_rule
 from .format_rules import convert_fprintf
@@ -105,13 +107,16 @@ def _split_assignment(text):
     return None, None
 
 
-def _translate_matrix(expr):
+def _translate_matrix(expr, scalars=None, declared=None):
     inner = expr[1:-1].strip()
     rows = _split_top_level(inner, ";")
     arrays = []
     for row in rows:
         cells = [c for c in re.split(r"[,\s]+", row) if c]
-        arrays.append("[%s]" % ", ".join(cells))
+        translated = [_translate_expr(c, scalars, declared) for c in cells]
+        if any(t == UNRESOLVED for t in translated):
+            return UNRESOLVED
+        arrays.append("[%s]" % ", ".join(translated))
     return "np.array([%s])" % ", ".join(arrays)
 
 
@@ -122,10 +127,6 @@ def _is_index_like(arg):
     if re.fullmatch(r"\d+(?:\.\d+)?|end(?:-\d+)?|[A-Za-z_][A-Za-z0-9_]*|:", arg):
         return True
     return ":" in arg
-
-
-def _split_range(expr):
-    return [p for p in _split_top_level(expr, ":") if p.strip()]
 
 
 def _valid_python(expr):
@@ -226,14 +227,16 @@ def _translate_range(parts, scalars=None, declared=None):
 
 def _translate_builtin_call(name, argtext, scalars=None, declared=None):
     """Translate a builtin call, first resolving any nested call-like
-    arguments (user indexing or nested calls) with the full expression
-    translator so a known builtin never swallows an unconverted ``name()``
-    indexing site, then delegate formatting to ``apply_builtin_rule``."""
+    arguments (user indexing or nested calls) and any colon-range
+    arguments with the full expression translator, so a known builtin
+    never swallows an unconverted ``name()`` indexing site or a range.
+    Range detection is the Reader's context-independent check, so it
+    applies to arguments in any syntactic context."""
     args = _split_top_level(argtext, ",") if argtext.strip() else []
     translated = []
     for a in args:
         stripped = a.strip()
-        if re.match(r"[A-Za-z_][A-Za-z0-9_]*\s*\(", stripped):
+        if re.match(r"[A-Za-z_][A-Za-z0-9_]*\s*\(", stripped) or is_range(stripped):
             inner = _translate_expr(stripped, scalars, declared)
             if inner == UNRESOLVED:
                 return UNRESOLVED
@@ -249,7 +252,7 @@ def _translate_expr(expr, scalars=None, declared=None):
     if not expr:
         return ""
     if expr.startswith("[") and expr.endswith("]"):
-        return _translate_matrix(expr)
+        return _translate_matrix(expr, scalars, declared)
     if len(expr) >= 2 and expr[0] == expr[-1] == "'":
         return expr
 
@@ -260,7 +263,7 @@ def _translate_expr(expr, scalars=None, declared=None):
         inner = _translate_expr(expr[1:-1], scalars, declared)
         return UNRESOLVED if inner == UNRESOLVED else "(%s)" % inner
 
-    range_parts = _split_range(expr)
+    range_parts = split_range(expr)
     if len(range_parts) >= 2:
         return _translate_range(range_parts, scalars, declared)
 

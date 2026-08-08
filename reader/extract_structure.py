@@ -9,6 +9,50 @@ _BUILTINS = {
 }
 
 
+def split_top_level(text, sep):
+    """Split ``text`` on ``sep`` only where it sits at nesting depth 0.
+
+    Brackets (``[``/``]``) and parentheses (``(``/``)``) protect their
+    contents, so a separator inside e.g. ``foo(a, b)`` or ``[1 2]`` never
+    splits the enclosing expression.
+    """
+    parts = []
+    depth = 0
+    current = ""
+    for ch in text:
+        if ch in "([":
+            depth += 1
+        elif ch in ")]":
+            depth -= 1
+        if ch == sep and depth == 0:
+            parts.append(current.strip())
+            current = ""
+        else:
+            current += ch
+    if current.strip():
+        parts.append(current.strip())
+    return parts
+
+
+def split_range(expr):
+    """Context-independent colon-range detection.
+
+    Split a MATLAB expression on top-level colons.  This recognizes a
+    colon range (``start:stop`` or ``start:step:stop``) no matter which
+    syntactic context it appears in -- a direct index, a ``[ ]`` matrix
+    literal cell, a function-call argument, or an expression nested
+    several levels deep.  Colons inside brackets/parentheses are guarded
+    by the nesting depth, so e.g. ``foo(a:b)`` is detected as a call, not
+    a range.
+    """
+    return [p for p in split_top_level(expr, ":") if p.strip()]
+
+
+def is_range(expr):
+    """True when ``expr`` carries a colon range at its own top level."""
+    return len(split_range(expr)) >= 2
+
+
 def _loop_from_node(node):
     loop_type = "for" if node.type == "for_statement" else "while"
     header = None

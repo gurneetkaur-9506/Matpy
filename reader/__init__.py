@@ -1,4 +1,9 @@
-from .extract_structure import extract_structure
+from .extract_structure import (
+    extract_structure,
+    is_range,
+    split_range,
+    split_top_level,
+)
 from .load_matlab_file import load_matlab_file
 from .load_python_file import load_python_file
 from .load_structure import (
@@ -16,9 +21,12 @@ __all__ = [
     "PYTHON_TO_MATLAB",
     "build_structure",
     "extract_structure",
+    "is_range",
     "load_matlab_file",
     "load_python_file",
     "load_structure",
     "load_structure_from_source",
+    "split_range",
+    "split_top_level",
     "structure_to_dict",
 ]

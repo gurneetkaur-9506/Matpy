@@ -4,7 +4,7 @@ import unittest
 from tree_sitter import Language, Parser
 from tree_sitter_matlab import language
 
-from reader import extract_structure, load_matlab_file
+from reader import extract_structure, is_range, load_matlab_file, split_range
 from tests.paths import sample_matlab, sample_python
 
 
@@ -51,6 +51,34 @@ class TestExtractPythonStructure(unittest.TestCase):
             {"kind": "index", "name": "P2", "indices": ["1:length(P2)/2+1"]},
             index_refs,
         )
+
+
+class TestReaderRangeDetection(unittest.TestCase):
+    """Colon-range detection lives in the Reader's structure extraction and
+    is context-independent: a range is recognized no matter which syntactic
+    context it appears in (direct expression, inside [ ] brackets, as a
+    function-call argument, or nested inside another expression)."""
+
+    def test_bare_range(self):
+        self.assertTrue(is_range("1:5"))
+        self.assertTrue(is_range("0:0.5:2"))
+        self.assertEqual(split_range("1:2:5"), ["1", "2", "5"])
+        self.assertEqual(split_range("1:5"), ["1", "5"])
+
+    def test_non_range(self):
+        self.assertFalse(is_range("x"))
+        self.assertFalse(is_range("A(1, :)"))
+        self.assertFalse(is_range("foo(1:5)"))
+        self.assertFalse(is_range("2 * (1:5)"))
+
+    def test_brackets_protect_their_colons(self):
+        self.assertFalse(is_range("[1:5]"))
+        self.assertFalse(is_range("foo(a:b)"))
+        self.assertEqual(split_range("[1:5]"), ["[1:5]"])
+
+    def test_split_top_level_respects_nesting(self):
+        self.assertEqual(split_range("2 * (1:3) + 1"), ["2 * (1:3) + 1"])
+        self.assertEqual(split_range("1:5"), ["1", "5"])
 
 
 if __name__ == "__main__":

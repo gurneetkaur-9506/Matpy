@@ -320,5 +320,64 @@ class TestFFTDivisionAndRange(unittest.TestCase):
         )
 
 
+class TestRangesInAnyContext(unittest.TestCase):
+    """Colon ranges translate in ANY syntactic context, not just as a
+    direct index.  Range detection is context-independent in the Reader's
+    structure extraction, so a range inside a [ ] matrix literal, a bare
+    function-call argument, or nested two levels deep inside another
+    expression all go through the same code path."""
+
+    def _translate(self, text):
+        structure = Structure(statements=[Statement("assignment", text)])
+        return translate_with_rulebook(structure)["statements"][0]["python"]
+
+    def test_range_inside_square_brackets(self):
+        self.assertEqual(
+            self._translate("y = [1:5]"),
+            "y = np.array([[np.arange(1, 5 + 1)]])",
+        )
+
+    def test_step_range_inside_square_brackets(self):
+        self.assertEqual(
+            self._translate("y = [0:0.5:2]"),
+            "y = np.array([[np.arange(0, 2, 0.5)]])",
+        )
+
+    def test_range_rows_inside_square_brackets(self):
+        self.assertEqual(
+            self._translate("y = [1:3; 4:6]"),
+            "y = np.array([[np.arange(1, 3 + 1)], [np.arange(4, 6 + 1)]])",
+        )
+
+    def test_range_as_bare_function_argument(self):
+        self.assertEqual(
+            self._translate("y = foo(1:5)"),
+            "y = foo(np.arange(1, 5 + 1))",
+        )
+
+    def test_range_as_builtin_argument(self):
+        self.assertEqual(
+            self._translate("y = abs(1:5)"),
+            "y = np.abs(np.arange(1, 5 + 1))",
+        )
+
+    def test_range_nested_two_levels_deep(self):
+        self.assertEqual(
+            self._translate("y = foo(2 * (1:5))"),
+            "y = foo(2 * (np.arange(1, 5 + 1)))",
+        )
+
+    def test_translated_outputs_are_valid_python(self):
+        for source in (
+            "y = [1:5]",
+            "y = [0:0.5:2]",
+            "y = [1:3; 4:6]",
+            "y = foo(1:5)",
+            "y = foo(2 * (1:5))",
+        ):
+            py = self._translate(source)
+            compile(py.split(" = ", 1)[1], "<test>", "eval")
+
+
 if __name__ == "__main__":
     unittest.main()
