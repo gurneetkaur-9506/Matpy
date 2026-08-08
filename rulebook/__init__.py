@@ -23,6 +23,8 @@ from .operator_rules import (
 )
 from .translator import (
     UNRESOLVED,
+    assert_block_invariant,
+    collapse_unresolved_blocks,
     translate_with_rulebook,
     translate_with_rulebook_reverse,
 )
@@ -36,6 +38,8 @@ __all__ = [
     "apply_builtin_rule",
     "apply_builtin_rule_reverse",
     "apply_complex_rule",
+    "assert_block_invariant",
+    "collapse_unresolved_blocks",
     "convert_fprintf",
     "format_spec_count",
     "apply_indexing_rule",

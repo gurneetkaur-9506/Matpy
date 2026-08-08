@@ -321,7 +321,7 @@ class TestReportWithBeamform(unittest.TestCase):
             {
                 "k = 2 * pi / lambda",
                 "af = af + exp(1i * (n - 1) * phase)",
-                "for n = 1:N",
+                "for n = 1:N\n        af = af + exp(1i * (n - 1) * phase);\n    end",
             },
         )
         for entry in syntax:

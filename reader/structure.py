@@ -20,6 +20,7 @@ class Loop:
     type: str
     header: str
     statements: list = field(default_factory=list)
+    source: str = None
 
 
 @dataclass
@@ -65,7 +66,14 @@ def _statements_from_container(container):
             info = _loop_from_node(child)
             body_block = next((c for c in child.children if c.type == "block"), None)
             inner = _statements_from_container(body_block)
-            statements.append(Loop(info["type"], info["header"], inner))
+            statements.append(
+                Loop(
+                    info["type"],
+                    info["header"],
+                    inner,
+                    child.text.decode("utf-8"),
+                )
+            )
         else:
             statements.append(Statement(child.type, child.text.decode("utf-8")))
     return statements
@@ -98,7 +106,9 @@ def _py_statements_from_body(body):
         if isinstance(child, (ast.For, ast.While)):
             loop_type = "for" if isinstance(child, ast.For) else "while"
             inner = _py_statements_from_body(child.body)
-            statements.append(Loop(loop_type, _py_loop_header(child), inner))
+            statements.append(
+                Loop(loop_type, _py_loop_header(child), inner, ast.unparse(child))
+            )
         else:
             statements.append(Statement(child.__class__.__name__, ast.unparse(child)))
     return statements

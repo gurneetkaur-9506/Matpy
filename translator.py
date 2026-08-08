@@ -52,7 +52,7 @@ def _emit_block(statements, lines, indent="", problems=None):
         if stmt["python"] == UNRESOLVED:
             if problems is not None:
                 problems.append(len(lines))
-            lines.append(indent + "# UNRESOLVED: %s" % stmt["source"])
+            _emit_unresolved_comment(stmt.get("source"), lines, indent, "#")
             continue
         if "\n" in stmt["python"]:
             for sub in stmt["python"].split("\n"):
@@ -63,6 +63,18 @@ def _emit_block(statements, lines, indent="", problems=None):
             _emit_block(
                 stmt.get("body", []), lines, indent=indent + "    ", problems=problems
             )
+
+
+def _emit_unresolved_comment(source, lines, indent, marker):
+    """Emit a whole block construct as a single UNRESOLVED comment.
+
+    Every line of the raw source is prefixed so no MATLAB syntax (a stray
+    'end', an 'else' clause, half-converted statements) can leak into the
+    output: the block is one atomic, fully-commented unit."""
+    src_lines = (source or "").splitlines() or [""]
+    lines.append(indent + marker + " UNRESOLVED: " + src_lines[0])
+    for sub in src_lines[1:]:
+        lines.append(indent + marker + " " + sub)
 
 
 def _emit_function(func, lines, problems=None):
@@ -108,7 +120,7 @@ def _emit_block_reverse(statements, lines, indent="", problems=None):
         if matlab == UNRESOLVED:
             if problems is not None:
                 problems.append(len(lines))
-            lines.append(indent + "%% UNRESOLVED: %s" % stmt["source"])
+            _emit_unresolved_comment(stmt.get("source"), lines, indent, "%")
             continue
         if not matlab:
             continue

@@ -10,17 +10,28 @@ _BUILTINS = {
 
 
 def _loop_from_node(node):
-    loop_type = None
+    loop_type = "for" if node.type == "for_statement" else "while"
     header = None
     body = None
-    for child in node.children:
-        if child.type in ("iterator", "while"):
-            loop_type = "for" if child.type == "iterator" else "while"
-            header = child.text.decode("utf-8")
-        elif child.type == "block":
-            body = child.text.decode("utf-8")
-    if loop_type is None:
-        loop_type = "for" if node.type == "for_statement" else "while"
+    if loop_type == "for":
+        for child in node.children:
+            if child.type == "iterator":
+                header = child.text.decode("utf-8")
+            elif child.type == "block":
+                body = child.text.decode("utf-8")
+    else:
+        # The 'while' keyword token must be skipped; the header is the
+        # condition text between the keyword and the first body block.
+        for child in node.children:
+            if child.type == "while":
+                continue
+            if child.type == "block":
+                body = child.text.decode("utf-8")
+                break
+            if header is None:
+                header = child.text.decode("utf-8")
+            else:
+                header = "%s %s" % (header, child.text.decode("utf-8"))
     return {"type": loop_type, "header": header, "body": body}
 
 

@@ -406,7 +406,38 @@ def _comment_for(stmt, python):
     return "# MATLAB: %s; -> Python: %s" % (stmt.text, _note_for(stmt, python))
 
 
+def _raw_block_source(node):
+    """Return the raw source text that spans an entire block construct.
+
+    For a ``Loop`` this is the full text from its opening keyword through
+    the matching 'end'; for a ``Statement`` it is the statement's own text
+    (which, for block constructs such as if/switch, already covers the whole
+    construct including every clause and the closing 'end')."""
+    if hasattr(node, "kind"):
+        return node.text
+    return _loop_source(node)
+
+
+def _loop_source(loop):
+    """Full source of a ``Loop`` block, opening keyword through 'end'.
+
+    The Reader normally records this verbatim on ``loop.source``.  When a
+    ``Loop`` is assembled programmatically without a source, a faithful
+    reconstruction is built from the header and body statements so the
+    atomic-block invariant still holds."""
+    source = getattr(loop, "source", None)
+    if source:
+        return source
+    body = "\n".join(
+        "    " + line
+        for s in loop.statements
+        for line in _raw_block_source(s).splitlines()
+    )
+    return "%s %s\n%s\nend" % (loop.type, loop.header, body)
+
+
 def _translate_loop(stmt, scalars=None, declared=None):
+    source = _loop_source(stmt)
     header = "%s %s" % (stmt.type, stmt.header)
     body_declared = set(declared) if declared else set()
     body_declared.add(_loop_variable(stmt))
@@ -417,14 +448,14 @@ def _translate_loop(stmt, scalars=None, declared=None):
         if target:
             body_declared.add(target)
     if any(s["python"] == UNRESOLVED for s in body):
-        return {"kind": "loop", "source": header, "python": UNRESOLVED}
+        return {"kind": "loop", "source": source, "python": UNRESOLVED}
 
     var, eq, expr = stmt.header.partition("=")
     if not eq or ":" not in expr:
-        return {"kind": "loop", "source": header, "python": UNRESOLVED}
+        return {"kind": "loop", "source": source, "python": UNRESOLVED}
     converted = apply_indexing_rule(expr.strip())
     if ":" not in converted:
-        return {"kind": "loop", "source": header, "python": UNRESOLVED}
+        return {"kind": "loop", "source": source, "python": UNRESOLVED}
     start, stop = converted.split(":", 1)
     if start == "0":
         loop_py = "for %s in range(%s):" % (var.strip(), stop)
@@ -432,7 +463,7 @@ def _translate_loop(stmt, scalars=None, declared=None):
         loop_py = "for %s in range(%s, %s):" % (var.strip(), start, stop)
     return {
         "kind": "loop",
-        "source": header,
+        "source": source,
         "python": loop_py,
         "comment": "# MATLAB: %s; -> Python: %s" % (header, loop_py),
         "body": body,
@@ -590,6 +621,120 @@ def _preallocations_for_loop(loop, declared):
     return preallocations
 
 
+def _translation_key(stmt):
+    """Return the output-field key ('python' or 'matlab') for a translated
+    statement, whichever of the two the statement carries."""
+    if "python" in stmt:
+        return "python"
+    return "matlab"
+
+
+def collapse_unresolved_blocks(statements):
+    """Enforce the atomic-block invariant across a list of translated
+    statements, as a general post-pass applied after every translation
+    attempt (never as per-construct-type logic).
+
+    Invariant: every block construct is either fully resolved -- its
+    ``body`` contains no UNRESOLVED descendant -- or reduced to a single
+    atomic UNRESOLVED statement whose ``source`` spans the whole construct
+    (opening keyword through matching 'end') and which carries no ``body``.
+    A partial translation -- a translated header still holding an UNRESOLVED
+    body, or any resolved statement with an UNRESOLVED descendant -- is
+    collapsed here so it can never leak raw MATLAB syntax into the output.
+
+    Returns a new list of statements with the invariant restored.
+    """
+    cleaned = []
+    for stmt in statements:
+        if not isinstance(stmt, dict):
+            cleaned.append(stmt)
+            continue
+        key = _translation_key(stmt)
+        body = stmt.get("body") or []
+        if stmt.get(key) == UNRESOLVED:
+            collapsed = dict(stmt)
+            collapsed.pop("body", None)
+            collapsed["source"] = stmt.get("source") or ""
+            cleaned.append(collapsed)
+            continue
+        if body:
+            body = collapse_unresolved_blocks(body)
+            if any(b.get(key) == UNRESOLVED for b in body):
+                collapsed = dict(stmt)
+                collapsed[key] = UNRESOLVED
+                collapsed.pop("body", None)
+                collapsed["source"] = stmt.get("source") or ""
+                cleaned.append(collapsed)
+            else:
+                collapsed = dict(stmt)
+                collapsed["body"] = body
+                cleaned.append(collapsed)
+        else:
+            cleaned.append(stmt)
+    return cleaned
+
+
+def _check_atomic_invariant(statements, path, violations):
+    for stmt in statements:
+        key = _translation_key(stmt)
+        where = "%s[%r]" % (path, stmt.get("source", ""))
+        if stmt.get(key) == UNRESOLVED:
+            if stmt.get("body"):
+                violations.append(
+                    "UNRESOLVED block at %s still carries a body: %r"
+                    % (where, list(stmt.get("body")))
+                )
+            source = stmt.get("source") or ""
+            if not source.strip():
+                violations.append(
+                    "UNRESOLVED block at %s has no source text" % where
+                )
+            if stmt.get("kind") == "loop" and key == "python" and not re.match(
+                r"^\s*(for|while)\b", source
+            ):
+                violations.append(
+                    "UNRESOLVED loop at %s source does not open with "
+                    "for/while: %r" % (where, source)
+                )
+            if stmt.get("kind") == "loop" and key == "python" and not source.rstrip().endswith(
+                "end"
+            ):
+                violations.append(
+                    "UNRESOLVED loop at %s source does not end with 'end': %r"
+                    % (where, source)
+                )
+        elif stmt.get("body"):
+            for child in stmt["body"]:
+                if child.get(key) == UNRESOLVED:
+                    violations.append(
+                        "resolved statement %s contains an UNRESOLVED "
+                        "descendant %r" % (where, child.get("source", ""))
+                    )
+            _check_atomic_invariant(stmt["body"], where, violations)
+
+
+def assert_block_invariant(result):
+    """Verify the atomic-block invariant across a translated result.
+
+    After every translation attempt, for every block construct (while, for,
+    if, switch, nested combinations) either the whole block was fully
+    translated, or the entire block from its opening keyword to its matching
+    'end' was captured as a single atomic UNRESOLVED statement with no
+    partial body surviving.  Raises AssertionError listing every violation.
+    """
+    violations = []
+    for func in result.get("functions", []):
+        _check_atomic_invariant(
+            func.get("statements", []), func.get("name", "?"), violations
+        )
+    _check_atomic_invariant(result.get("statements", []), "<top-level>", violations)
+    if violations:
+        raise AssertionError(
+            "atomic-block invariant violated:\n- %s"
+            % "\n- ".join(violations)
+        )
+
+
 def _translate_function(func):
     declared = set(func.parameters)
     scalars = set()
@@ -622,6 +767,10 @@ def translate_with_rulebook(structure):
         target = _declare_target(stmt.text) if hasattr(stmt, "kind") else None
         if target:
             declared.add(target)
+    result["statements"] = collapse_unresolved_blocks(result["statements"])
+    for func in result["functions"]:
+        func["statements"] = collapse_unresolved_blocks(func["statements"])
+    assert_block_invariant(result)
     return result
 
 
@@ -728,7 +877,7 @@ def _translate_statement_reverse(stmt):
     if not hasattr(stmt, "kind"):
         return {
             "kind": "loop",
-            "source": "%s %s" % (stmt.type, stmt.header),
+            "source": _loop_source(stmt),
             "matlab": UNRESOLVED,
         }
     if stmt.kind in ("Import", "ImportFrom"):
@@ -774,11 +923,13 @@ def translate_with_rulebook_reverse(structure):
             {
                 "name": func.name,
                 "parameters": list(func.parameters),
-                "statements": [
-                    _translate_statement_reverse(s) for s in func.statements
-                ],
+                "statements": collapse_unresolved_blocks(
+                    [_translate_statement_reverse(s) for s in func.statements]
+                ),
             }
         )
-    for stmt in structure.statements:
-        result["statements"].append(_translate_statement_reverse(stmt))
+    result["statements"] = collapse_unresolved_blocks(
+        [_translate_statement_reverse(s) for s in structure.statements]
+    )
+    assert_block_invariant(result)
     return result
