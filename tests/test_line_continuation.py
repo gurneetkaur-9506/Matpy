@@ -27,6 +27,17 @@ class TestJoinLineContinuations(unittest.TestCase):
             "disp('first', 'second', 'third');\n",
         )
 
+    def test_three_line_continuation_joins_all_lines(self):
+        source = (
+            "fprintf('a=%d ', ...\n"
+            "    b=%d, ...\n"
+            "    c=%d);\n"
+        )
+        self.assertEqual(
+            join_line_continuations(source),
+            "fprintf('a=%d ', b=%d, c=%d);\n",
+        )
+
     def test_non_continuation_lines_untouched(self):
         source = "a = 1;\nb = 2;\n"
         self.assertEqual(join_line_continuations(source), source)
@@ -45,6 +56,16 @@ class TestLineContinuationParsing(unittest.TestCase):
         source = "fprintf('The value is %d', ...\n    x);\n"
         lines = self._translate(source)
         self.assertEqual(lines, ['print("The value is %d" % (x))'])
+        self.assertNotIn("...", "\n".join(lines))
+
+    def test_three_line_continuation_parses_as_one_statement(self):
+        source = (
+            "fprintf('a=%d b=%d', ...\n"
+            "    a, ...\n"
+            "    b);\n"
+        )
+        lines = self._translate(source)
+        self.assertEqual(lines, ['print("a=%d b=%d" % (a, b))'])
         self.assertNotIn("...", "\n".join(lines))
 
 
