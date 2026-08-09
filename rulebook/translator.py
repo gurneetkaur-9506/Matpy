@@ -500,6 +500,8 @@ def _translate_expr(expr, scalars=None, declared=None):
         return "%s * %s" % (left_py, right_py)
     if op == "./":
         return "%s / %s" % (left_py, right_py)
+    if op == ".^":
+        return "%s ** %s" % (left_py, right_py)
     if op == "/":
         # Matrix right-division only when both operands are arrays; a
         # scalar divisor (e.g. length(P2), fs) means element-wise division.

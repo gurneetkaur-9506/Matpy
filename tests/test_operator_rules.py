@@ -14,6 +14,19 @@ class TestApplyOperatorRule(unittest.TestCase):
     def test_elementwise_divide(self):
         self.assertEqual(apply_operator_rule("a ./ b"), "a / b")
 
+    def test_elementwise_power(self):
+        self.assertEqual(apply_operator_rule("X.^2"), "X ** 2")
+
+    def test_elementwise_power_spaced(self):
+        self.assertEqual(apply_operator_rule("X .^ 2"), "X ** 2")
+
+    def test_elementwise_power_binds_tighter_than_multiply(self):
+        self.assertEqual(apply_operator_rule("a .* b .^ c"), "a * b ** c")
+
+    def test_elementwise_power_found_by_operator_split(self):
+        self.assertEqual(_find_last_operator("X.^2"), (1, ".^"))
+        self.assertEqual(_find_last_operator("a * b .^ c"), (2, "*"))
+
     def test_matrix_right_divide(self):
         self.assertEqual(
             apply_operator_rule("a / b"),

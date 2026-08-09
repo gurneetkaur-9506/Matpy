@@ -188,6 +188,20 @@ def _find_last_operator(expr):
             return idx - 1, "./"
         return idx, expr[idx]
 
+    # Element-wise power (.^) binds tighter than every multiplicative
+    # operator, so it is looked for only after * / .* ./ have been ruled
+    # out at the current depth.  A bare '^' (MATLAB matrix power) is not an
+    # element-wise operator and is left for the caller to pass through.
+    idx = _find("^")
+    if idx is not None:
+        if (
+            idx > 0
+            and expr[idx - 1] == "."
+            and (idx - 1) not in protected
+        ):
+            return idx - 1, ".^"
+        return None, None
+
     return None, None
 
 
@@ -265,6 +279,8 @@ def apply_operator_rule(expr):
         return "%s * %s" % (left, right)
     if op == "./":
         return "%s / %s" % (left, right)
+    if op == ".^":
+        return "%s ** %s" % (left, right)
     if op == "/":
         # MATLAB '/' is matrix right-division (solve a * x = b) ONLY when
         # both operands are arrays; dividing by a scalar (a count like
