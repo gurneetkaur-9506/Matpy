@@ -371,7 +371,7 @@ class TestReportPanel(unittest.TestCase):
             win.translate_button.click()
         text = win.report_pane.toPlainText()
         self.assertIn("Line", text)
-        self.assertIn("n = np.arange(N)", text)
+        self.assertIn("return af", text)
         self.assertEqual(win.report_button.text(), "Report (%d)" % len(text.splitlines()))
         win.close()
 

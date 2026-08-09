@@ -25,6 +25,7 @@ from .operator_rules import (
     apply_operator_rule_reverse,
     scientific_literals,
 )
+from .sequence_rules import SEQUENCE_RULES, apply_sequence_rule_reverse
 from .translator import (
     UNRESOLVED,
     assert_block_invariant,
@@ -40,10 +41,12 @@ __all__ = [
     "OPERATOR_RULES",
     "UNRESOLVED",
     "ATTRIBUTE_RULES_REVERSE",
+    "SEQUENCE_RULES",
     "apply_attribute_rule_reverse",
     "apply_builtin_rule",
     "apply_builtin_rule_reverse",
     "apply_complex_rule",
+    "apply_sequence_rule_reverse",
     "assert_block_invariant",
     "collapse_unresolved_blocks",
     "convert_fprintf",

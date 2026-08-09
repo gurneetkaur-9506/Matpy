@@ -28,11 +28,13 @@ from .operator_rules import (
     is_scalar_like,
 )
 from .scan_rules import (
+
     translate_feof_loop,
     translate_feof_statement,
     translate_fopen,
     translate_fscanf,
 )
+from .sequence_rules import apply_sequence_rule_reverse
 
 UNRESOLVED = "UNRESOLVED"
 
@@ -1316,6 +1318,9 @@ def _translate_expr_reverse(expr):
         r"[A-Za-z_][A-Za-z0-9_]*\.[A-Za-z_][A-Za-z0-9_.]*\s*\(.*\)", expr
     )
     if dotted:
+        sequence = apply_sequence_rule_reverse(expr)
+        if sequence != expr:
+            return sequence
         reversed_call = apply_builtin_rule_reverse(expr)
         if reversed_call != expr:
             return reversed_call

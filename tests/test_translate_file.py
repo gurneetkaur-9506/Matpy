@@ -147,7 +147,7 @@ class TestTranslateFile(unittest.TestCase):
         self.assertEqual(result["status"], "unresolved")
         self.assertEqual(result["sections"]["rulebook"]["status"], "unresolved")
         self.assertGreater(result["sections"]["rulebook"]["unresolved"], 0)
-        self.assertIn("% UNRESOLVED: n = np.arange(N)", result["python"])
+        self.assertIn("% UNRESOLVED: return af", result["python"])
 
 
     def test_forward_problem_lines_empty(self):
@@ -161,12 +161,12 @@ class TestTranslateFile(unittest.TestCase):
             direction=PYTHON_TO_MATLAB,
         )
         self.assertIn(
-            "% UNRESOLVED: n = np.arange(N)", result["python"]
+            "% UNRESOLVED: return af", result["python"]
         )
         unresolved_index = next(
             i
             for i, line in enumerate(result["python"].splitlines())
-            if "UNRESOLVED: n = np.arange(N)" in line
+            if "UNRESOLVED: return af" in line
         )
         self.assertIn(unresolved_index, result["problems"])
 

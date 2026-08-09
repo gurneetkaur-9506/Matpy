@@ -364,10 +364,10 @@ class TestReportWithBeamform(unittest.TestCase):
 
         unresolved = [e for e in report if e["issue"] == "unresolved"]
         sources = {e["source"] for e in unresolved}
-        self.assertIn("n = np.arange(N)", sources)
+        self.assertIn("af = beamform_basic(N=8, d=0.5, lamb=1.0, theta=theta, theta0=0.0)", sources)
         self.assertIn("return af", sources)
         lines = {e["line"] for e in unresolved}
-        self.assertIn(7, lines)
+        self.assertIn(13, lines)
         self.assertIn(9, lines)
 
         self.assertIsNone(by_issue["inconclusive_no_matlab"]["line"])
