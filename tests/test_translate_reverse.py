@@ -222,5 +222,18 @@ class TestTranslateWithRulebookReverse(unittest.TestCase):
         )
 
 
+    def test_plt_grid_true_maps_to_matlab_grid_on(self):
+        self.assertEqual(
+            self._translate_expr_stmt("plt.grid(True)"),
+            "grid on;",
+        )
+
+    def test_plt_grid_false_maps_to_matlab_grid_off(self):
+        self.assertEqual(
+            self._translate_expr_stmt("plt.grid(False)"),
+            "grid off;",
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

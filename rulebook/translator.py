@@ -394,8 +394,9 @@ _PLOT_DOTTED_CALL = re.compile(
 def _translate_plot_command_reverse(expr):
     """Translate a matplotlib plot command such as ``plt.subplot(2, 2, 1)``,
     ``plt.plot(x, y)`` or ``ax.set_zlabel('z')`` back to its MATLAB form.
-    Only the PLOT_COMMANDS entries that map 1:1 onto a plain call -- no
-    flag words, limit vectors or no-op commands -- are handled.  Keyword
+    Only the PLOT_COMMANDS entries that map onto a plain call -- no limit
+    vectors, spreads or no-op commands -- are handled.  Flag commands such
+    as ``plt.grid(True)`` become MATLAB flag words (``grid on;``).  Keyword
     arguments such as ``linewidth=2`` become MATLAB name-value pairs
     (``'LineWidth', 2``).  The trailing semicolon suppresses display of the
     returned handle, matching typical MATLAB script style."""
@@ -407,7 +408,14 @@ def _translate_plot_command_reverse(expr):
     if name is None:
         return expr
     spec = PLOT_COMMANDS[name]
-    if "vector" in spec or "flags" in spec or "spread" in spec or "noop" in spec:
+    flags = spec.get("flags")
+    if flags:
+        rev_flags = {"".join(value.split()): flag for flag, value in flags.items()}
+        flag_name = rev_flags.get("".join(argtext.split()))
+        if flag_name is None:
+            return UNRESOLVED
+        return "%s %s;" % (name, flag_name)
+    if "vector" in spec or "spread" in spec or "noop" in spec:
         return expr
     translated = []
     for a in _split_top_level(argtext, ","):
