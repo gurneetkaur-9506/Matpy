@@ -1,6 +1,6 @@
 import unittest
 
-from rulebook.index_shift import FORWARD, REVERSE, shift_index
+from rulebook.index_shift import FORWARD, REVERSE, UNRESOLVED, shift_index
 
 
 class TestShiftIndexForward(unittest.TestCase):
@@ -15,8 +15,8 @@ class TestShiftIndexForward(unittest.TestCase):
     def test_five_becomes_four(self):
         self.assertEqual(shift_index("5", FORWARD), "4")
 
-    def test_negative_literal_shifts_down(self):
-        self.assertEqual(shift_index("-1", FORWARD), "-2")
+    def test_negative_literal_is_unresolved(self):
+        self.assertEqual(shift_index("-1", FORWARD), UNRESOLVED)
 
     def test_whitespace_is_tolerated(self):
         self.assertEqual(shift_index(" 5 ", FORWARD), "4")
@@ -34,8 +34,13 @@ class TestShiftIndexReverse(unittest.TestCase):
     def test_five_becomes_six(self):
         self.assertEqual(shift_index("5", REVERSE), "6")
 
-    def test_negative_literal_shifts_up(self):
-        self.assertEqual(shift_index("-2", REVERSE), "-1")
+    def test_negative_literal_is_unresolved(self):
+        self.assertEqual(shift_index("-2", REVERSE), UNRESOLVED)
+
+    def test_negative_indexed_access_is_unresolved(self):
+        self.assertEqual(shift_index("x[-1]", REVERSE), UNRESOLVED)
+        self.assertEqual(shift_index("x[-1]", FORWARD), UNRESOLVED)
+        self.assertEqual(shift_index("x[1:-1]", REVERSE), UNRESOLVED)
 
 
 class TestShiftIndexPassThrough(unittest.TestCase):

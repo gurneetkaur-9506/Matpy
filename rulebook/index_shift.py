@@ -28,12 +28,18 @@ The primitive recognizes four forms of index:
 
 End-keywords pass through unchanged; their adjustment belongs to the
 richer indexing rules that call this primitive.
+
+A negative integer literal -- a Python end-relative index such as
+``x[-1]`` -- has no direct MATLAB equivalent, so it is reported as
+UNRESOLVED rather than silently shifted by the offset.
 """
 
 import re
 
 FORWARD = "forward"
 REVERSE = "reverse"
+
+UNRESOLVED = "UNRESOLVED"
 
 _VALID_DIRECTIONS = (FORWARD, REVERSE)
 
@@ -109,6 +115,10 @@ def _strip_outer_parens(expr):
     return expr[1:-1] if depth == 0 else expr
 
 
+def _is_negative_literal(expr):
+    return _INTEGER_LITERAL.fullmatch(expr) is not None and int(expr) < 0
+
+
 def _fold_constant_shift(expr, direction):
     """Fold the +-1 shift into a trailing integer constant term of an
     arithmetic expression: ``i + 1`` -> ``i`` forward and ``i - 1`` ->
@@ -139,7 +149,9 @@ def shift_index(expr, direction):
             Python -> MATLAB (add one, brackets to parentheses).
 
     Returns:
-        The shifted expression as a string.  Single-variable indices,
+        The shifted expression as a string, or UNRESOLVED when the
+        expression contains a negative literal index (e.g. "x[-1]"),
+        which has no direct MATLAB equivalent.  Single-variable indices,
         colon-ranges and end-keywords are returned unchanged.
 
     Raises:
@@ -150,6 +162,8 @@ def shift_index(expr, direction):
     expr = expr.strip()
     if _INTEGER_LITERAL.fullmatch(expr):
         value = int(expr)
+        if value < 0:
+            return UNRESOLVED
         if direction == FORWARD:
             return str(value - 1)
         return str(value + 1)
@@ -159,14 +173,19 @@ def shift_index(expr, direction):
     if match:
         name, inner = match.group(1), match.group(2)
         args = _split_args(inner)
-        shifted = ", ".join(shift_index(a, direction) for a in args)
+        shifted = [shift_index(a, direction) for a in args]
+        if any(s == UNRESOLVED for s in shifted):
+            return UNRESOLVED
+        joined = ", ".join(shifted)
         if direction == FORWARD:
-            return "%s[%s]" % (name, shifted)
-        return "%s(%s)" % (name, shifted)
+            return "%s[%s]" % (name, joined)
+        return "%s(%s)" % (name, joined)
     range_parts = _split_range(expr)
     if range_parts is not None:
         start, stop = range_parts
         shifted_start = shift_index(start, direction)
+        if shifted_start == UNRESOLVED or _is_negative_literal(stop):
+            return UNRESOLVED
         return "%s:%s" % (shifted_start, stop)
     stripped = _strip_outer_parens(expr)
     if _is_arithmetic(stripped):
