@@ -32,6 +32,13 @@ class TestApplyBuiltinRuleReverse(unittest.TestCase):
         self.assertEqual(apply_builtin_rule_reverse("np.abs(Y)"), "abs(Y)")
         self.assertEqual(apply_builtin_rule_reverse("np.abs(-3)"), "abs(-3)")
 
+    def test_randn(self):
+        self.assertEqual(
+            apply_builtin_rule_reverse("np.random.randn(*X.shape)"), "randn(size(X))"
+        )
+        self.assertEqual(apply_builtin_rule_reverse("np.random.randn(3, 5)"), "randn(3, 5)")
+        self.assertEqual(apply_builtin_rule_reverse("np.random.randn(3)"), "randn(3)")
+
     def test_nested_abs_fft(self):
         self.assertEqual(
             apply_builtin_rule_reverse("np.abs(np.fft.fft(x))"), "abs(fft(x))"

@@ -10,6 +10,7 @@ BUILTIN_RULES = {
     "floor": {"python": "np.floor", "arg_mode": "same"},
     "linspace": {"python": "np.linspace", "arg_mode": "same"},
     "log": {"python": "np.log", "arg_mode": "same"},
+    "randn": {"python": "np.random.randn", "arg_mode": "randn"},
     "reshape": {"python": "np.reshape", "arg_mode": "tuple_dims"},
     "round": {"python": "np.round", "arg_mode": "same"},
     "sin": {"python": "np.sin", "arg_mode": "same"},
@@ -94,6 +95,11 @@ def apply_builtin_rule_reverse(call):
             flat.extend(_expand_tuple_arg(a))
         return "%s(%s)" % (matlab_name, ", ".join(flat))
 
+    if rule["arg_mode"] == "randn":
+        if len(args) == 1 and args[0].startswith("*") and args[0][1:].endswith(".shape"):
+            return "%s(size(%s))" % (matlab_name, args[0][1:].rsplit(".shape", 1)[0])
+        return "%s(%s)" % (matlab_name, ", ".join(args))
+
     return "%s(%s)" % (matlab_name, ", ".join(args))
 
 
@@ -132,5 +138,10 @@ def apply_builtin_rule(call):
         if len(args) == 1:
             return "%s.shape" % args[0]
         return "%s.shape[%s]" % (args[0], _size_dim(args[1]))
+
+    if mode == "randn":
+        if len(args) == 1 and args[0].endswith(".shape"):
+            return "%s(*%s)" % (py_name, args[0])
+        return "%s(%s)" % (py_name, ", ".join(args))
 
     return call

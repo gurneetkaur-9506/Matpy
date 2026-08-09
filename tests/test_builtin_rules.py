@@ -83,6 +83,18 @@ class TestApplyBuiltinRule(unittest.TestCase):
         self.assertEqual(apply_builtin_rule("round(ceil(x))"), "np.round(np.ceil(x))")
         self.assertEqual(apply_builtin_rule("fix(size(m))"), "np.trunc(m.shape)")
 
+    def test_randn(self):
+        self.assertEqual(
+            apply_builtin_rule("randn(size(X))"), "np.random.randn(*X.shape)"
+        )
+        self.assertEqual(apply_builtin_rule("randn(3, 5)"), "np.random.randn(3, 5)")
+        self.assertEqual(apply_builtin_rule("randn(3)"), "np.random.randn(3)")
+
+    def test_randn_with_other_builtin_shape(self):
+        self.assertEqual(
+            apply_builtin_rule("randn(size(theta))"), "np.random.randn(*theta.shape)"
+        )
+
     def test_unknown_call_passthrough(self):
         self.assertEqual(apply_builtin_rule("myfunc(x)"), "myfunc(x)")
 
