@@ -45,6 +45,13 @@ class TestApplyIndexingRuleReverse(unittest.TestCase):
     def test_len_call(self):
         self.assertEqual(apply_indexing_rule_reverse("len(P2)"), "length(P2)")
 
+    def test_compound_index_expr(self):
+        self.assertEqual(apply_indexing_rule_reverse("t[1] - t[0]"), "t(2) - t(1)")
+        self.assertEqual(apply_indexing_rule_reverse("t[1] + t[2]"), "t(2) + t(3)")
+        self.assertEqual(
+            apply_indexing_rule_reverse("t[1] - t[0] + 5"), "t(2) - t(1) + 5"
+        )
+
     def test_unknown_passthrough(self):
         self.assertEqual(apply_indexing_rule_reverse("a+b"), "a+b")
 
