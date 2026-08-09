@@ -276,6 +276,134 @@ class TestTranslateWithRulebookReverse(unittest.TestCase):
         result = self._translate_expr_stmt("plt.show()")
         self.assertNotEqual(result, UNRESOLVED)
         self.assertTrue(result.startswith("%"))
+    def test_python_len_flagged_not_passed_through(self):
+        cases = [
+            Statement("Assign", "y = len(x)"),
+            Statement("Assign", "z = samplesDelay + len(txPulse) + 100"),
+            Statement("Assign", "w = len(x) ./ 2"),
+        ]
+        result = translate_with_rulebook_reverse(Structure(statements=cases))
+        for s in result["statements"]:
+            self.assertEqual(s["matlab"], UNRESOLVED)
+            self.assertNotIn("len(", s["matlab"])
+
+    def test_python_shape_flagged_not_passed_through(self):
+        cases = [
+            Statement("Assign", "y = x.shape"),
+            Statement("Assign", "z = x.shape[0]"),
+        ]
+        result = translate_with_rulebook_reverse(Structure(statements=cases))
+        for s in result["statements"]:
+            self.assertEqual(s["matlab"], UNRESOLVED)
+            self.assertNotIn(".shape", s["matlab"])
+
+    def test_python_sum_flagged_not_passed_through(self):
+        cases = [
+            Statement("Assign", "y = x.sum(axis=0)"),
+            Statement("Assign", "z = x.sum()"),
+            Statement("Assign", "w = x.sum(axis=0) + 1"),
+        ]
+        result = translate_with_rulebook_reverse(Structure(statements=cases))
+        for s in result["statements"]:
+            self.assertEqual(s["matlab"], UNRESOLVED)
+            self.assertNotIn(".sum", s["matlab"])
+
+    def test_python_newaxis_flagged_not_passed_through(self):
+        cases = [
+            Statement("Assign", "y = x[:, np.newaxis]"),
+            Statement("Expr", "print(x[:, np.newaxis])"),
+            Statement("Assign", "z = np.newaxis"),
+        ]
+        result = translate_with_rulebook_reverse(Structure(statements=cases))
+        for s in result["statements"]:
+            self.assertEqual(s["matlab"], UNRESOLVED)
+            self.assertNotIn("newaxis", s["matlab"])
+
+    def test_python_only_construct_in_target_flagged(self):
+        structure = Structure(statements=[Statement("Assign", "x[:, np.newaxis] = 5")])
+        result = translate_with_rulebook_reverse(structure)
+        self.assertEqual(result["statements"][0]["matlab"], UNRESOLVED)
+
+    def test_string_contents_do_not_trigger_guard(self):
+        structure = Structure(
+            statements=[Statement("Expr", "print('x.shape and len(x) are just text')")]
+        )
+        result = translate_with_rulebook_reverse(structure)
+        self.assertEqual(result["statements"][0]["matlab"], "disp('x.shape and len(x) are just text')")
+
+    def test_multi_arg_print_flagged_not_emitted_as_disp(self):
+        cases = [
+            Statement("Expr", "print('first 3 values:', A(1:3))"),
+            Statement("Expr", "print(a, b)"),
+            Statement("Expr", "print()"),
+        ]
+        result = translate_with_rulebook_reverse(Structure(statements=cases))
+        for s in result["statements"]:
+            self.assertEqual(s["matlab"], UNRESOLVED)
+            self.assertNotIn("disp(a, b)", s["matlab"])
+
+    def test_single_arg_print_still_emits_disp(self):
+        structure = Structure(statements=[Statement("Expr", "print(A[0, 3])")])
+        result = translate_with_rulebook_reverse(structure)
+        self.assertEqual(result["statements"][0]["matlab"], "disp(A(1, 4))")
+
+    def test_python_modulo_flagged_not_passed_through(self):
+        cases = [
+            Statement("Assign", "y = a % b"),
+            Statement("Assign", "z = (x % 2) + 1"),
+        ]
+        result = translate_with_rulebook_reverse(Structure(statements=cases))
+        for s in result["statements"]:
+            self.assertEqual(s["matlab"], UNRESOLVED)
+            self.assertNotIn(" % ", s["matlab"])
+
+    def test_percent_format_print_maps_to_fprintf(self):
+        structure = Structure(
+            statements=[Statement("Expr", "print('Estimated Range: %.2f m' % r)")]
+        )
+        result = translate_with_rulebook_reverse(structure)
+        self.assertEqual(
+            result["statements"][0]["matlab"], "fprintf('Estimated Range: %.2f m', r)"
+        )
+
+    def test_whitelisted_np_names_still_reverse(self):
+        structure = Structure(
+            statements=[
+                Statement("Assign", "y = np.linspace(0, 100, 91)"),
+                Statement("Assign", "y = np.zeros((2, 5))"),
+            ]
+        )
+        result = translate_with_rulebook_reverse(structure)
+        matlab = [s["matlab"] for s in result["statements"]]
+        self.assertEqual(matlab, ["y = linspace(0, 100, 91)", "y = zeros(2, 5)"])
+
+    def test_unwhitelisted_np_name_flags_whole_expr(self):
+        structure = Structure(
+            statements=[Statement("Assign", "y = np.linspace(0, np.pi, 91)")]
+        )
+        result = translate_with_rulebook_reverse(structure)
+        self.assertEqual(result["statements"][0]["matlab"], UNRESOLVED)
+
+    def test_python_floordiv_flagged_not_passed_through(self):
+        cases = [
+            Statement("Assign", "half = len(magnitude) // 2 + 1"),
+            Statement("Assign", "y = a // b"),
+            Statement("Assign", "z = (a // b) + 1"),
+        ]
+        result = translate_with_rulebook_reverse(Structure(statements=cases))
+        for s in result["statements"]:
+            self.assertEqual(s["matlab"], UNRESOLVED)
+            self.assertNotIn("./ ./", s["matlab"])
+
+    def test_python_power_flagged_not_passed_through(self):
+        cases = [
+            Statement("Assign", "y = x ** 2"),
+            Statement("Assign", "z = x ** (1 / 2)"),
+        ]
+        result = translate_with_rulebook_reverse(Structure(statements=cases))
+        for s in result["statements"]:
+            self.assertEqual(s["matlab"], UNRESOLVED)
+            self.assertNotIn(".* .*", s["matlab"])
 
 
 if __name__ == "__main__":

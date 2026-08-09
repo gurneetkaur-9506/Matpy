@@ -47,6 +47,15 @@ class TestApplyOperatorRuleReverse(unittest.TestCase):
         self.assertEqual(apply_operator_rule_reverse("sin(x)"), "sin(x)")
         self.assertEqual(apply_operator_rule_reverse("np.linalg.det(a)"), "np.linalg.det(a)")
 
+    def test_floordiv_not_misparsed_as_elementwise_divide(self):
+        self.assertEqual(apply_operator_rule_reverse("a // b"), "a // b")
+
+    def test_power_not_misparsed_as_elementwise_multiply(self):
+        self.assertEqual(apply_operator_rule_reverse("a ** b"), "a ** b")
+
+    def test_floordiv_inside_operand_not_misparsed(self):
+        self.assertEqual(apply_operator_rule_reverse("a / b // c"), "a ./ b // c")
+
     def test_round_trip_simple_operators(self):
         self.assertEqual(
             apply_operator_rule_reverse(apply_operator_rule("a * b")), "a * b"

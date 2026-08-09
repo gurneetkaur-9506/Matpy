@@ -324,6 +324,16 @@ def _find_last_reverse_operator(expr):
             depth -= 1
         elif depth == 0:
             if ch in "*@/":
+                if ch == "/" and i > 0 and expr[i - 1] == "/":
+                    # Python floor division '//': treat as a single token
+                    # that is NOT an element-wise divide, so it can never
+                    # be mirrored into a malformed './ ./'.
+                    i -= 2
+                    continue
+                if ch == "*" and i > 0 and expr[i - 1] == "*":
+                    # Python exponent '**': same idea, never '.* .*'.
+                    i -= 2
+                    continue
                 return i, ch
         i -= 1
     return None, None

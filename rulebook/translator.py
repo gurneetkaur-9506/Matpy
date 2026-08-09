@@ -1383,12 +1383,102 @@ def _fstring_to_fprintf(argtext):
     return "fprintf('%s', %s)" % (fmt, ", ".join(translated))
 
 
+_PY_LEN_CALL = re.compile(r"\blen\s*\(")
+_PY_SHAPE_ATTR = re.compile(r"\.shape\b")
+_PY_SUM_CALL = re.compile(r"\.sum\s*\(")
+_PY_FLOORDIV = re.compile(r"//")
+_PY_POWER = re.compile(r"\*\*")
+_PY_NP_NAME = re.compile(r"\bnp\.[A-Za-z_][A-Za-z0-9_.]*")
+
+# np.-prefixed names that have a working reverse rule back to MATLAB.
+# Any other np. name (e.g. np.pi, np.newaxis, np.mean) has no reverse rule
+# and must never pass through as if it were valid MATLAB.
+_PY_NP_ALLOWED_REVERSE = frozenset(
+    {
+        "np.abs",
+        "np.array",
+        "np.ceil",
+        "np.cos",
+        "np.exp",
+        "np.fft.fft",
+        "np.floor",
+        "np.linalg.solve",
+        "np.linspace",
+        "np.log",
+        "np.random.randn",
+        "np.reshape",
+        "np.round",
+        "np.sin",
+        "np.sqrt",
+        "np.tan",
+        "np.trunc",
+        "np.zeros",
+    }
+)
+
+
+def _strip_string_literals(text):
+    """Blank out Python string literal contents so that Python-only
+    construct detection never fires on printed text."""
+    out = list(text)
+    i = 0
+    n = len(text)
+    while i < n:
+        ch = text[i]
+        if ch in "'\"":
+            quote = ch
+            j = i + 1
+            while j < n:
+                if text[j] == quote:
+                    if j + 1 < n and text[j + 1] == quote:
+                        j += 2
+                        continue
+                    j += 1
+                    break
+                j += 1
+            for k in range(i, min(j, n)):
+                out[k] = " "
+            i = j
+            continue
+        i += 1
+    return "".join(out)
+
+
+def _contains_python_only_construct(expr):
+    """True when expr contains a Python-only construct (len(), .shape,
+    .sum(...), //, **, np.newaxis, modulo '%', or any np. name with no
+    reverse rule) that must never be passed through as if it were valid
+    MATLAB."""
+    stripped = _strip_string_literals(expr)
+    if _PY_LEN_CALL.search(stripped):
+        return True
+    if _PY_SHAPE_ATTR.search(stripped):
+        return True
+    if _PY_SUM_CALL.search(stripped):
+        return True
+    if _PY_FLOORDIV.search(stripped):
+        return True
+    if _PY_POWER.search(stripped):
+        return True
+    if "%" in stripped and _find_percent_format_op(expr) is None:
+        # A '%' outside string literals that is not a printf-style format
+        # operation is Python modulo; it has no MATLAB mirror and a stray
+        # '%' also starts a MATLAB comment.
+        return True
+    for match in _PY_NP_NAME.finditer(stripped):
+        if match.group(0) not in _PY_NP_ALLOWED_REVERSE:
+            return True
+    return False
+
+
 def _translate_expr_reverse(expr):
     expr = expr.strip()
     if not expr:
         return ""
     if len(expr) >= 2 and expr[0] == expr[-1] == "'":
         return expr
+    if _contains_python_only_construct(expr):
+        return UNRESOLVED
 
     match = re.fullmatch(r"np\.array\((.*)\)", expr, re.DOTALL)
     if match:
@@ -1411,7 +1501,11 @@ def _translate_expr_reverse(expr):
             ]
             if any(t == UNRESOLVED for t in translated):
                 return UNRESOLVED
-            return "disp(%s)" % ", ".join(translated)
+            # MATLAB disp() takes exactly one argument; 'print(a, b)' must
+            # never become an invalid 'disp(a, b)'.
+            if len(translated) != 1:
+                return UNRESOLVED
+            return "disp(%s)" % translated[0]
         args = _split_top_level(argtext, ",")
         if args and all(_is_index_like(a) for a in args):
             reversed_call = apply_indexing_rule_reverse(expr)
@@ -1503,6 +1597,8 @@ def _translate_statement_reverse(stmt):
             return {"kind": stmt.kind, "source": stmt.text, "matlab": UNRESOLVED}
         value_matlab = _translate_expr_reverse(value)
         if value_matlab == UNRESOLVED:
+            return {"kind": stmt.kind, "source": stmt.text, "matlab": UNRESOLVED}
+        if _contains_python_only_construct(target):
             return {"kind": stmt.kind, "source": stmt.text, "matlab": UNRESOLVED}
         target_matlab = apply_indexing_rule_reverse(target) if "[" in target else target
         matlab = "%s = %s" % (target_matlab, value_matlab)
