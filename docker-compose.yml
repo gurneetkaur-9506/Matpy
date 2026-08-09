@@ -36,4 +36,3 @@ services:
       - .:/app
     stdin_open: true
     tty: true
-    command: python ui/translator_window.py
