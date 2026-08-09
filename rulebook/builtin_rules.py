@@ -8,6 +8,7 @@ BUILTIN_RULES = {
     "fft": {"python": "np.fft.fft", "arg_mode": "same"},
     "fix": {"python": "np.trunc", "arg_mode": "same"},
     "floor": {"python": "np.floor", "arg_mode": "same"},
+    "hann": {"python": "scipy.signal.windows.hann", "arg_mode": "same"},
     "linspace": {"python": "np.linspace", "arg_mode": "same"},
     "log": {"python": "np.log", "arg_mode": "same"},
     "randn": {"python": "np.random.randn", "arg_mode": "randn"},

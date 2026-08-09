@@ -95,6 +95,10 @@ class TestApplyBuiltinRule(unittest.TestCase):
             apply_builtin_rule("randn(size(theta))"), "np.random.randn(*theta.shape)"
         )
 
+    def test_hann(self):
+        self.assertEqual(apply_builtin_rule("hann(N)"), "scipy.signal.windows.hann(N)")
+        self.assertEqual(apply_builtin_rule("hann(256)"), "scipy.signal.windows.hann(256)")
+
     def test_unknown_call_passthrough(self):
         self.assertEqual(apply_builtin_rule("myfunc(x)"), "myfunc(x)")
 
