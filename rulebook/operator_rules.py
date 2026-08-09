@@ -309,9 +309,26 @@ def apply_operator_rule(expr):
     return expr
 
 
+def _is_unary_sign(expr, i):
+    """True when ``expr[i]`` is a '+'/'-' used as a unary sign (no left
+    operand at the same nesting level)."""
+    j = i - 1
+    while j >= 0 and expr[j] == " ":
+        j -= 1
+    if j < 0:
+        return True
+    return expr[j] in "+-*@/("
+
+
 def _find_last_reverse_operator(expr):
+    """Return ``(index, operator)`` of the rightmost top-level operator,
+    respecting Python precedence: an additive '+'/'-' binds looser than the
+    multiplicative '*', '@', '/' and '//', so a top-level additive operator
+    splits the expression first."""
     protected = _protected_positions(expr)
     depth = 0
+    add = None
+    mult = None
     i = len(expr) - 1
     while i >= 0:
         ch = expr[i]
@@ -323,20 +340,26 @@ def _find_last_reverse_operator(expr):
         elif ch in "([":
             depth -= 1
         elif depth == 0:
-            if ch in "*@/":
+            if ch in "+-" and add is None:
+                if not _is_unary_sign(expr, i):
+                    add = (i, ch)
+            elif ch in "*@/":
                 if ch == "/" and i > 0 and expr[i - 1] == "/":
-                    # Python floor division '//': treat as a single token
-                    # that is NOT an element-wise divide, so it can never
-                    # be mirrored into a malformed './ ./'.
-                    i -= 2
-                    continue
-                if ch == "*" and i > 0 and expr[i - 1] == "*":
-                    # Python exponent '**': same idea, never '.* .*'.
-                    i -= 2
-                    continue
-                return i, ch
+                    # Python floor division '//': a single token mapped to
+                    # floor(...), never a malformed './ ./'.
+                    if mult is None:
+                        mult = (i - 1, "//")
+                    i -= 1
+                elif ch == "*" and i > 0 and expr[i - 1] == "*":
+                    # Python exponent '**': no reverse rule; skip so it is
+                    # never mirrored into a malformed '.* .*'.
+                    i -= 1
+                elif mult is None:
+                    mult = (i, ch)
         i -= 1
-    return None, None
+    if add is not None:
+        return add
+    return mult if mult is not None else (None, None)
 
 
 def apply_operator_rule_reverse(expr):
@@ -360,8 +383,20 @@ def apply_operator_rule_reverse(expr):
     if op is None:
         return expr
 
+    op_len = 2 if op == "//" else 1
     left = apply_operator_rule_reverse(expr[:idx])
-    right = apply_operator_rule_reverse(expr[idx + 1:])
+    right = apply_operator_rule_reverse(expr[idx + op_len:])
+
+    if op == "//":
+        # Python floor division: floor(a / b) for scalars, floor(a ./ b) for
+        # arrays.  The element-wise './' is chosen whenever either operand is
+        # array-like (unknown identifiers), which stays valid for scalars too.
+        if is_scalar_like(expr[:idx]) and is_scalar_like(expr[idx + op_len:]):
+            return "floor(%s / %s)" % (left, right)
+        return "floor(%s ./ %s)" % (left, right)
+
+    if op in ("+", "-"):
+        return "%s %s %s" % (left, op, right)
 
     matlab_op = REVERSE_OPERATOR_RULES.get(op)
     if matlab_op is None:

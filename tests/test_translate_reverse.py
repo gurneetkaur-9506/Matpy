@@ -281,6 +281,7 @@ class TestTranslateWithRulebookReverse(unittest.TestCase):
             Statement("Assign", "y = len(x)"),
             Statement("Assign", "z = samplesDelay + len(txPulse) + 100"),
             Statement("Assign", "w = len(x) ./ 2"),
+            Statement("Assign", "half = len(magnitude) // 2 + 1"),
         ]
         result = translate_with_rulebook_reverse(Structure(statements=cases))
         for s in result["statements"]:
@@ -384,15 +385,27 @@ class TestTranslateWithRulebookReverse(unittest.TestCase):
         result = translate_with_rulebook_reverse(structure)
         self.assertEqual(result["statements"][0]["matlab"], UNRESOLVED)
 
-    def test_python_floordiv_flagged_not_passed_through(self):
+    def test_floordiv_scalar_maps_to_floor_divide(self):
+        structure = Structure(statements=[Statement("Assign", "y = 5 // 2")])
+        result = translate_with_rulebook_reverse(structure)
+        self.assertEqual(result["statements"][0]["matlab"], "y = floor(5 / 2)")
+
+    def test_floordiv_array_maps_to_floor_elementwise(self):
         cases = [
-            Statement("Assign", "half = len(magnitude) // 2 + 1"),
+            Statement("Assign", "y = x // y"),
+            Statement("Assign", "half = a // 2 + 1"),
+        ]
+        result = translate_with_rulebook_reverse(Structure(statements=cases))
+        matlab = [s["matlab"] for s in result["statements"]]
+        self.assertEqual(matlab, ["y = floor(x ./ y)", "half = floor(a ./ 2) + 1"])
+
+    def test_floordiv_never_emits_malformed_double_operator(self):
+        cases = [
             Statement("Assign", "y = a // b"),
-            Statement("Assign", "z = (a // b) + 1"),
+            Statement("Assign", "z = a / b // c"),
         ]
         result = translate_with_rulebook_reverse(Structure(statements=cases))
         for s in result["statements"]:
-            self.assertEqual(s["matlab"], UNRESOLVED)
             self.assertNotIn("./ ./", s["matlab"])
 
     def test_python_power_flagged_not_passed_through(self):

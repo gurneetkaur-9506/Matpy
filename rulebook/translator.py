@@ -1386,7 +1386,6 @@ def _fstring_to_fprintf(argtext):
 _PY_LEN_CALL = re.compile(r"\blen\s*\(")
 _PY_SHAPE_ATTR = re.compile(r"\.shape\b")
 _PY_SUM_CALL = re.compile(r"\.sum\s*\(")
-_PY_FLOORDIV = re.compile(r"//")
 _PY_POWER = re.compile(r"\*\*")
 _PY_NP_NAME = re.compile(r"\bnp\.[A-Za-z_][A-Za-z0-9_.]*")
 
@@ -1455,8 +1454,6 @@ def _contains_python_only_construct(expr):
     if _PY_SHAPE_ATTR.search(stripped):
         return True
     if _PY_SUM_CALL.search(stripped):
-        return True
-    if _PY_FLOORDIV.search(stripped):
         return True
     if _PY_POWER.search(stripped):
         return True

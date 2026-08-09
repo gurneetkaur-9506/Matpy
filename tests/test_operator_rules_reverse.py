@@ -47,14 +47,34 @@ class TestApplyOperatorRuleReverse(unittest.TestCase):
         self.assertEqual(apply_operator_rule_reverse("sin(x)"), "sin(x)")
         self.assertEqual(apply_operator_rule_reverse("np.linalg.det(a)"), "np.linalg.det(a)")
 
-    def test_floordiv_not_misparsed_as_elementwise_divide(self):
-        self.assertEqual(apply_operator_rule_reverse("a // b"), "a // b")
+    def test_floordiv_scalar_maps_to_floor_divide(self):
+        self.assertEqual(apply_operator_rule_reverse("5 // 2"), "floor(5 / 2)")
+        self.assertEqual(apply_operator_rule_reverse("7 // 3"), "floor(7 / 3)")
+
+    def test_floordiv_array_maps_to_floor_elementwise(self):
+        self.assertEqual(apply_operator_rule_reverse("x // y"), "floor(x ./ y)")
+        self.assertEqual(apply_operator_rule_reverse("x // 2"), "floor(x ./ 2)")
+        self.assertEqual(apply_operator_rule_reverse("2 // y"), "floor(2 ./ y)")
+
+    def test_floordiv_respects_additive_precedence(self):
+        self.assertEqual(
+            apply_operator_rule_reverse("x + a // b"), "x + floor(a ./ b)"
+        )
+        self.assertEqual(
+            apply_operator_rule_reverse("a // b + c"), "floor(a ./ b) + c"
+        )
+
+    def test_floordiv_chains_left_to_right(self):
+        self.assertEqual(
+            apply_operator_rule_reverse("a // b // c"), "floor(floor(a ./ b) ./ c)"
+        )
+
+    def test_floordiv_never_malformed_double_operator(self):
+        self.assertNotIn("./ ./", apply_operator_rule_reverse("a // b"))
+        self.assertNotIn("./ ./", apply_operator_rule_reverse("a / b // c"))
 
     def test_power_not_misparsed_as_elementwise_multiply(self):
         self.assertEqual(apply_operator_rule_reverse("a ** b"), "a ** b")
-
-    def test_floordiv_inside_operand_not_misparsed(self):
-        self.assertEqual(apply_operator_rule_reverse("a / b // c"), "a ./ b // c")
 
     def test_round_trip_simple_operators(self):
         self.assertEqual(

@@ -83,7 +83,7 @@ class TestScientificNotationAtomicReverse(unittest.TestCase):
 
     def test_literal_embedded_in_expression_stays_atomic(self):
         result = apply_operator_rule_reverse("2*10e-6+1")
-        self.assertEqual(result, "2 .* 10e-6+1")
+        self.assertEqual(result, "2 .* 10e-6 + 1")
         self.assertIn("10e-6", result)
         self.assertNotIn("10e .* -6", result)
 
