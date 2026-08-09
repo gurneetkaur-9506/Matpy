@@ -74,7 +74,7 @@ class TestReservedKeywordRenames(unittest.TestCase):
         result = self._translate(
             "lambda = 2;\nwavelength = pi / lambda;\ndisp(lambda);\n"
         )
-        self.assertIn("wavelength = pi / lambda_", result["python"])
+        self.assertIn("wavelength = np.pi / lambda_", result["python"])
         self.assertIn("print(lambda_)", result["python"])
         self.assertEqual(_bare_uses(result["python"], "lambda"), [])
         ast.parse(result["python"])

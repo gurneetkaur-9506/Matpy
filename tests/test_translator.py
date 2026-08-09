@@ -70,7 +70,7 @@ class TestPlotBuiltins(unittest.TestCase):
     def test_scalar_multiply_in_signal_mix_stays_plain_star(self):
         translations = [s["python"] for s in self.result["statements"]]
         self.assertIn(
-            "x = np.sin(2 * pi * f1 * t) + 0.5 * np.sin(2 * pi * f2 * t)",
+            "x = np.sin(2 * np.pi * f1 * t) + 0.5 * np.sin(2 * np.pi * f2 * t)",
             translations,
         )
 
@@ -725,6 +725,44 @@ class TestViewRule(unittest.TestCase):
         self.assertEqual(
             self._translate("view(30, 45)"), "ax.view_init(elev=45, azim=30)"
         )
+
+
+class TestConstantsRules(unittest.TestCase):
+    """MATLAB numeric constants (pi, eps) matched as standalone
+    identifiers anywhere in an expression."""
+
+    def _translate(self, text):
+        structure = Structure(statements=[Statement("assignment", "y = %s" % text)])
+        return translate_with_rulebook(structure)["statements"][0]["python"]
+
+    def test_pi_alone(self):
+        self.assertEqual(self._translate("pi"), "y = np.pi")
+
+    def test_pi_in_product(self):
+        self.assertEqual(self._translate("2*pi"), "y = 2 * np.pi")
+
+    def test_pi_in_builtin_argument(self):
+        self.assertEqual(
+            self._translate("sin(pi)"), "y = np.sin(np.pi)"
+        )
+
+    def test_eps_alone(self):
+        self.assertEqual(
+            self._translate("eps"), "y = np.finfo(float).eps"
+        )
+
+    def test_eps_in_sum(self):
+        self.assertEqual(
+            self._translate("x + eps"), "y = x + np.finfo(float).eps"
+        )
+
+    def test_eps_in_product_stays_elementwise(self):
+        self.assertEqual(
+            self._translate("x * eps"), "y = x * np.finfo(float).eps"
+        )
+
+    def test_pi_is_not_index_shifted(self):
+        self.assertEqual(self._translate("pi"), "y = np.pi")
 
 
 if __name__ == "__main__":

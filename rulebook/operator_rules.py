@@ -54,7 +54,7 @@ def _protected_positions(expr):
 
 _SCALAR_RE = re.compile(r"^[-+]?(?:\d+(?:\.\d+)?|\.\d+)(?:[eE][+-]?\d+)?$")
 _IMAG_SCALAR_RE = re.compile(r"^[-+]?(?:\d+(?:\.\d+)?|\.\d+)(?:[eE][+-]?\d+)?i$")
-_SCALAR_CONSTANTS = {"pi", "e"}
+_SCALAR_CONSTANTS = {"pi", "e", "eps"}
 # Calls that always yield a scalar: a count (length/numel/len), a rounded
 # value (round), or a reduction over a whole array (max/min produce a scalar
 # for the 1-D inputs used here).  Recognized so a later '/' with one of these

@@ -102,6 +102,13 @@ _TRIG_DEGREES = {
     "atand": ("np.arctan", "np.degrees"),
 }
 
+# MATLAB numeric constants matched as standalone identifiers anywhere in an
+# expression (pi -> np.pi, eps -> np.finfo(float).eps).
+_CONSTANTS = {
+    "pi": "np.pi",
+    "eps": "np.finfo(float).eps",
+}
+
 
 def _split_top_level(text, sep):
     parts = []
@@ -642,6 +649,8 @@ def _translate_expr(expr, scalars=None, declared=None):
             if base_py == UNRESOLVED:
                 return UNRESOLVED
             return apply_transpose_rule(base_py, transpose_kind)
+        if expr in _CONSTANTS:
+            return _CONSTANTS[expr]
         return apply_complex_rule(expr)
 
     left_py = _translate_expr(expr[:idx], scalars, declared)

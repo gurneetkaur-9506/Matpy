@@ -335,7 +335,7 @@ class TestReportWithBeamform(unittest.TestCase):
             "# renamed: MATLAB 'lambda' -> Python 'lambda_' (reserved keyword)",
             result["python"],
         )
-        self.assertIn("k = 2 * pi / lambda_", result["python"])
+        self.assertIn("k = 2 * np.pi / lambda_", result["python"])
         self.assertNotIn("k = 2 * pi / lambda\n", result["python"])
         syntax_sources = {e["source"] for e in build_translation_report(result)}
         self.assertNotIn("k = 2 * pi / lambda", syntax_sources)
