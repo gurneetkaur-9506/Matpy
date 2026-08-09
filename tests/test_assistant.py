@@ -93,6 +93,51 @@ class TestParseResponse(unittest.TestCase):
         self.assertEqual(parsed["code"], "")
         self.assertIn("no CODE section found in model response", parsed["notes"])
 
+    def test_parses_delimiterless_response(self):
+        text = (
+            "CODE\nimport numpy as np\n"
+            "def f(x):\n"
+            "    return np.sum(x)\n"
+            "\n"
+            "CONFIDENCE\n0.5\n"
+            "\n"
+            "UNSURE\n"
+            "- assumed x is 1-D\n"
+            "- not sure about broadcasting\n"
+        )
+        parsed = parse_response(text)
+        self.assertEqual(parsed["code"], "import numpy as np\ndef f(x):\n    return np.sum(x)")
+        self.assertAlmostEqual(parsed["confidence"], 0.5)
+        self.assertIn("uncertainty flagged: assumed x is 1-D", parsed["notes"])
+        self.assertIn("uncertainty flagged: not sure about broadcasting", parsed["notes"])
+
+    def test_parses_delimiterless_low_confidence_response(self):
+        text = (
+            "CODE\nfunction af = beamform_basic(N, d, lamb, theta, theta0)\n"
+            "    k = 2 * pi / lamb;\n"
+            "end\n"
+            "\n"
+            "CONFIDENCE\n0.3\n"
+            "\n"
+            "UNSURE\n"
+            "- np.exp maps to multiple candidates; chose steervec\n"
+        )
+        parsed = parse_response(text)
+        self.assertEqual(
+            parsed["code"], "function af = beamform_basic(N, d, lamb, theta, theta0)\n    k = 2 * pi / lamb;\nend"
+        )
+        self.assertAlmostEqual(parsed["confidence"], 0.3)
+        self.assertEqual(
+            parsed["notes"], ["uncertainty flagged: np.exp maps to multiple candidates; chose steervec"]
+        )
+
+    def test_delimiterless_without_unsure_yields_no_notes(self):
+        text = "CODE\nx = 1\n\nCONFIDENCE\n0.7\n"
+        parsed = parse_response(text)
+        self.assertEqual(parsed["code"], "x = 1")
+        self.assertAlmostEqual(parsed["confidence"], 0.7)
+        self.assertEqual(parsed["notes"], [])
+
     def test_uncertain_language_without_flags_reported(self):
         text = (
             "CODE\nx = 1\nEND CODE\n"

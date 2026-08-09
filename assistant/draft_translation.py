@@ -135,15 +135,41 @@ def _call_ollama(prompt):
     return payload.get("response", "")
 
 
+_SECTION_MARKERS = (
+    "CODE",
+    "END CODE",
+    "CONFIDENCE",
+    "END CONFIDENCE",
+    "UNSURE",
+    "END UNSURE",
+)
+
+
 def _extract_section(text, start, end):
+    """Extract a section body bounded by ``start``/``end`` markers.
+
+    The strict format requires both markers.  Real models sometimes omit the
+    ``END ...`` closing marker, so when it is missing the body is taken up to
+    the next known section marker (or the end of the text).
+    """
     pattern = re.compile(
         r"%s\s*\n(?P<body>.*?)\n\s*%s" % (re.escape(start), re.escape(end)),
         re.DOTALL,
     )
     match = pattern.search(text)
     if not match:
-        return None
-    body = match.group("body").strip()
+        head = re.search(r"%s\s*\n" % re.escape(start), text, re.DOTALL)
+        if not head:
+            return None
+        body_end = len(text)
+        for marker in _SECTION_MARKERS:
+            if marker == start:
+                continue
+            pos = text.find(marker, head.end())
+            if pos != -1 and pos < body_end:
+                body_end = pos
+        match = {"body": text[head.end():body_end]}
+    body = match["body"].strip()
     body = re.sub(r"^```(?:python)?\s*\n", "", body)
     body = re.sub(r"\n```\s*$", "", body)
     return body
