@@ -77,6 +77,59 @@ class TestTranslateWithRulebookReverse(unittest.TestCase):
         statements = result["functions"][0]["statements"]
         self.assertEqual(statements[0]["matlab"], "disp(x)")
 
+    def _translate_expr_stmt(self, source):
+        structure = Structure(statements=[Statement("Expr", source)])
+        result = translate_with_rulebook_reverse(structure)
+        return result["statements"][0]["matlab"]
+
+    def test_percent_format_print_maps_to_fprintf(self):
+        self.assertEqual(
+            self._translate_expr_stmt('print("x = %d" % 5)'),
+            "fprintf('x = %d', 5)",
+        )
+
+    def test_percent_format_print_with_tuple_maps_to_fprintf(self):
+        self.assertEqual(
+            self._translate_expr_stmt('print("a=%.2f and %s" % (x, y))'),
+            "fprintf('a=%.2f and %s', x, y)",
+        )
+
+    def test_percent_format_print_single_quote_escaped(self):
+        self.assertEqual(
+            self._translate_expr_stmt('print("it\'s %d" % x)'),
+            "fprintf('it''s %d', x)",
+        )
+
+    def test_fstring_print_maps_to_fprintf(self):
+        self.assertEqual(
+            self._translate_expr_stmt('print(f"x = {y}")'),
+            "fprintf('x = %s', y)",
+        )
+
+    def test_fstring_print_with_expression_maps_to_fprintf(self):
+        self.assertEqual(
+            self._translate_expr_stmt('print(f"sum = {x + y}")'),
+            "fprintf('sum = %s', x + y)",
+        )
+
+    def test_fstring_print_with_format_spec_maps_to_fprintf(self):
+        self.assertEqual(
+            self._translate_expr_stmt('print(f"val = {y:.2f}")'),
+            "fprintf('val = %.2f', y)",
+        )
+
+    def test_plain_print_stays_disp(self):
+        self.assertEqual(
+            self._translate_expr_stmt('print("hello")'),
+            'disp("hello")',
+        )
+
+    def test_print_with_percent_in_string_but_no_format_op_stays_disp(self):
+        self.assertEqual(
+            self._translate_expr_stmt('print("50% done")'),
+            'disp("50% done")',
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -1137,6 +1137,144 @@ def _translate_matrix_reverse(inner):
     return "[%s]" % " ".join(elems)
 
 
+def _find_percent_format_op(text):
+    """Return the index of the ``%`` operator in ``text`` when it is Python's
+    printf-style format operation (a string literal immediately followed by
+    ``%``), else None."""
+    i = 0
+    n = len(text)
+    while i < n:
+        ch = text[i]
+        if ch in "'\"":
+            j = i + 1
+            while j < n:
+                if text[j] == "\\":
+                    j += 2
+                    continue
+                if text[j] == ch:
+                    break
+                j += 1
+            k = j + 1
+            while k < n and text[k] == " ":
+                k += 1
+            if k < n and text[k] == "%":
+                return k
+            i = j + 1
+            continue
+        i += 1
+    return None
+
+
+def _fstring_body(text):
+    """Return the body of a single f-string literal (without the ``f`` prefix
+    and quotes), or None if ``text`` is not such a literal."""
+    match = re.match(r"\s*[fF](['\"])(.*)\1\s*$", text, re.DOTALL)
+    if not match:
+        return None
+    body = match.group(2)
+    if "{" not in body:
+        return None
+    return body
+
+
+def _output_has_format_specifiers(argtext):
+    """Single general rule: an output statement contains format specifiers when
+    it is a printf-style ``%`` operation on a string literal or an f-string."""
+    if _find_percent_format_op(argtext) is not None:
+        return True
+    return _fstring_body(argtext) is not None
+
+
+def _py_literal_to_matlab(literal):
+    """Convert a Python string literal (single or double quoted) to a MATLAB
+    single-quoted literal suitable for ``fprintf``. ``%`` format specs and
+    ``\\``-escapes pass through unchanged; embedded single quotes are doubled."""
+    literal = literal.strip()
+    if len(literal) < 2 or literal[0] not in "'\"" or literal[-1] != literal[0]:
+        return None
+    quote = literal[0]
+    body = literal[1:-1]
+    if quote == '"':
+        body = body.replace('\\"', '"')
+    else:
+        body = body.replace("\\'", "'")
+    return "'%s'" % body.replace("'", "''")
+
+
+def _percent_print_to_fprintf(argtext):
+    """Translate ``print("fmt" % args)`` to MATLAB ``fprintf('fmt', args)``."""
+    op = _find_percent_format_op(argtext)
+    if op is None:
+        return None
+    fmt = _py_literal_to_matlab(argtext[:op])
+    if fmt is None:
+        return None
+    args_src = argtext[op + 1:].strip()
+    if args_src.startswith("(") and args_src.endswith(")"):
+        inner = args_src[1:-1].strip()
+        args = _split_top_level(inner, ",") if inner else []
+    else:
+        args = [args_src]
+    translated = [_translate_expr_reverse(a) for a in args]
+    if any(t == UNRESOLVED for t in translated):
+        return None
+    if not translated:
+        return "fprintf(%s)" % fmt
+    return "fprintf(%s, %s)" % (fmt, ", ".join(translated))
+
+
+def _fstring_to_fprintf(argtext):
+    """Translate ``print(f"lit {expr} ...")`` to MATLAB ``fprintf``, replacing
+    each ``{expr}`` placeholder with a ``%`` spec and passing ``expr`` as an
+    argument."""
+    body = _fstring_body(argtext)
+    if body is None:
+        return None
+    fmt_parts = []
+    arg_parts = []
+    i = 0
+    n = len(body)
+    while i < n:
+        ch = body[i]
+        if ch == "{":
+            if i + 1 < n and body[i + 1] == "{":
+                fmt_parts.append("{")
+                i += 2
+                continue
+            end = body.find("}", i)
+            if end < 0:
+                return None
+            content = body[i + 1:end]
+            i = end + 1
+            if ":" in content:
+                expr, _, spec = content.partition(":")
+                placeholder = "%" + spec.strip()
+            else:
+                expr = content.partition("!")[0]
+                placeholder = "%s"
+            expr = expr.strip()
+            if not expr:
+                return None
+            arg_parts.append(expr)
+            fmt_parts.append(placeholder)
+        elif ch == "}":
+            if i + 1 < n and body[i + 1] == "}":
+                fmt_parts.append("}")
+                i += 2
+                continue
+            return None
+        else:
+            fmt_parts.append(ch)
+            i += 1
+    if not arg_parts:
+        return None
+    translated = [_translate_expr_reverse(a) for a in arg_parts]
+    if any(t == UNRESOLVED for t in translated):
+        return None
+    fmt = "".join(fmt_parts).replace("'", "''")
+    return "fprintf('%s', %s)" % (fmt, ", ".join(translated))
+
+
 def _translate_expr_reverse(expr):
     expr = expr.strip()
     if not expr:
@@ -1153,6 +1291,13 @@ def _translate_expr_reverse(expr):
     if call is not None:
         name, argtext = call
         if name == "print":
+            if _output_has_format_specifiers(argtext):
+                fprintf = _percent_print_to_fprintf(argtext)
+                if fprintf is None:
+                    fprintf = _fstring_to_fprintf(argtext)
+                if fprintf is not None:
+                    return fprintf
+                return UNRESOLVED
             translated = [
                 _translate_expr_reverse(a) for a in _split_top_level(argtext, ",")
             ]
@@ -1198,6 +1343,8 @@ def _note_for_reverse(stmt, matlab):
             return "0-based index converted to 1-based"
         return "assignment"
     if stmt.kind == "Expr":
+        if matlab.startswith("fprintf("):
+            return "print with format specifiers -> fprintf"
         if matlab.startswith("disp("):
             arg = matlab[len("disp("):-1].strip()
             if arg.startswith("'"):
