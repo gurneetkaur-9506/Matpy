@@ -101,7 +101,7 @@ class TestAssistantResilience(unittest.TestCase):
 
     @mock.patch(
         "assistant.draft_translation._call_ollama",
-        side_effect=ConnectionError("assistant service unavailable"),
+        side_effect=RuntimeError("assistant service unavailable"),
     )
     def test_assistant_error_reason_is_plain_language(self, mock_call):
         with _matlab_file(TWO_FUNCTION_MATLAB) as path:
@@ -111,6 +111,20 @@ class TestAssistantResilience(unittest.TestCase):
         self.assertEqual(reason, "assistant service unavailable")
         self.assertNotIn("Traceback", reason)
         self.assertNotIn("raise ", reason)
+
+    @mock.patch(
+        "assistant.draft_translation._call_ollama",
+        side_effect=ConnectionError("connection refused"),
+    )
+    def test_connection_error_is_labeled_ollama_unavailable(self, mock_call):
+        with _matlab_file(TWO_FUNCTION_MATLAB) as path:
+            result = translate_file(path)
+            report = build_translation_report(result)
+        reason = next(e["reason"] for e in report if e["issue"] == "assistant error")
+        self.assertIn("Ollama not running", reason)
+        self.assertIn("not a missing rule", reason)
+        functions = {f["name"]: f for f in result["functions"]}
+        self.assertIn("Ollama not running", functions["broken_func"]["draft_error"])
 
     def test_assistant_error_on_one_function_still_drafts_another(self):
         side_effect = [ConnectionError("first call failed"), HIGH_CONFIDENCE_RESPONSE]

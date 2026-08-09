@@ -276,5 +276,35 @@ class TestDraftRouting(unittest.TestCase):
         mock_call.assert_not_called()
 
 
+class TestOllamaUnavailableClassification(unittest.TestCase):
+    @mock.patch(
+        "assistant.draft_translation._call_ollama",
+        side_effect=ConnectionError("connection refused"),
+    )
+    def test_connection_error_maps_to_unavailable_message(self, mock_call):
+        result = {
+            "functions": [{"name": "f", "statements": [{"python": UNRESOLVED}]}],
+            "statements": [],
+        }
+        routed = draft_unresolved_functions(result, {"libs": []})
+        error = routed["functions"][0]["draft_error"]
+        self.assertIn("Ollama not running", error)
+        self.assertIn("not a missing rule", error)
+
+    @mock.patch(
+        "assistant.draft_translation._call_ollama",
+        side_effect=RuntimeError("model timed out"),
+    )
+    def test_runtime_error_keeps_original_message(self, mock_call):
+        result = {
+            "functions": [{"name": "f", "statements": [{"python": UNRESOLVED}]}],
+            "statements": [],
+        }
+        routed = draft_unresolved_functions(result, {"libs": []})
+        self.assertEqual(
+            routed["functions"][0]["draft_error"], "model timed out"
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

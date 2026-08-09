@@ -1,7 +1,21 @@
+import urllib.error
+
 from reader import MATLAB_TO_PYTHON, PYTHON_TO_MATLAB
 from rulebook import UNRESOLVED
 
 from .draft_translation import draft_translation
+
+OLLAMA_UNAVAILABLE_MESSAGE = (
+    "Assistant unavailable — Ollama not running. "
+    "This is not a missing rule: the rulebook left this function UNRESOLVED "
+    "and the Assistant could not draft it because the Ollama server is not "
+    "reachable. Start it with `ollama serve` and re-run to get a draft."
+)
+
+
+def _is_ollama_unavailable(exc):
+    """True when the failure is a connection error, not a model/runtime one."""
+    return isinstance(exc, (urllib.error.URLError, ConnectionError, TimeoutError))
 
 
 def draft_unresolved_functions(
@@ -15,5 +29,8 @@ def draft_unresolved_functions(
                     func, specialist_lib_contents, direction=direction
                 )
             except Exception as exc:
-                func["draft_error"] = str(exc)
+                if _is_ollama_unavailable(exc):
+                    func["draft_error"] = OLLAMA_UNAVAILABLE_MESSAGE
+                else:
+                    func["draft_error"] = str(exc)
     return result
