@@ -135,6 +135,27 @@ constructs. Findings are fed back to the Assistant to refine the translation,
 closing the loop until the output is clean or the remaining issues are
 reported to the user.
 
+## Accuracy Scoring
+
+The accuracy score reflects real correctness, not merely how many rules matched:
+
+1. **Every line must parse.** Each generated statement and the whole generated
+   module are validated with `ast.parse`; a line that does not parse counts as
+   unresolved (weight 0.0).
+2. **Numeric comparison where possible.** When the Checker runs a numeric
+   cross-check against real output, its verdict drives the score: a
+   `verified` verdict earns every resolved line full weight (1.0), while a
+   `failed` verdict zeroes the resolved lines (0.0), even if rules matched.
+3. **Fallback to provenance weights.** Without a conclusive numeric verdict
+   (no MATLAB engine, no inputs, or an inconclusive result), resolved lines
+   are weighted by source: rulebook lines 1.0, Assistant drafts by their
+   reported confidence, unresolved lines 0.0.
+
+The score is a percentage in 0-100. Each result reports the weighted
+contribution per source (`breakdown`) and the `method` that produced the
+score, so callers can tell whether it came from a numeric comparison or from
+rulebook matching.
+
 ## Companion Modules
 
 The project also includes a UI for driving the translation process and a

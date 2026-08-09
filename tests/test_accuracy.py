@@ -21,7 +21,7 @@ def _func(name, count, unresolved=0, confidence=None):
     return func
 
 
-def _result(total, unresolved=0, checker="skipped", functions=None):
+def _result(total, unresolved=0, checker="skipped", functions=None, statements=None):
     return {
         "sections": {
             "rulebook": {
@@ -33,6 +33,7 @@ def _result(total, unresolved=0, checker="skipped", functions=None):
             "checker": {"status": checker},
         },
         "functions": functions or [],
+        "statements": statements or [],
     }
 
 
@@ -232,6 +233,65 @@ class TestAccuracy(unittest.TestCase):
         scored = accuracy(result)
         self.assertEqual(scored["score"], 100.0)
         self.assertEqual(scored["breakdown"], {"rulebook": 1.0})
+
+    def test_failed_numeric_verdict_zeroes_all_resolved_lines(self):
+        func = _func("f", 4)
+        result = _result(total=4, checker="failed", functions=[func])
+        scored = accuracy(result)
+        self.assertEqual(scored["score"], 0.0)
+        self.assertEqual(scored["breakdown"], {"failed": 0.0})
+        self.assertEqual(
+            scored["method"], "numeric comparison against real output failed"
+        )
+
+    def test_failed_numeric_verdict_on_script(self):
+        stmts = [
+            {"kind": "assignment", "source": "a = 1;", "python": "a = 1"},
+            {"kind": "assignment", "source": "b = 2;", "python": "b = 2"},
+        ]
+        result = _result(total=2, checker="failed", statements=stmts)
+        scored = accuracy(result)
+        self.assertEqual(scored["score"], 0.0)
+        self.assertEqual(scored["breakdown"], {"failed": 0.0})
+
+    def test_verified_numeric_verdict_reports_method(self):
+        func = _func("f", 3, confidence=0.4)
+        result = _result(total=3, checker="verified", functions=[func])
+        scored = accuracy(result)
+        self.assertEqual(scored["score"], 100.0)
+        self.assertEqual(scored["breakdown"], {"verified": 3.0})
+        self.assertEqual(
+            scored["method"], "numeric comparison against real output passed"
+        )
+
+    def test_module_that_does_not_parse_downgrades_every_line(self):
+        stmts = [
+            {"kind": "assignment", "source": "a = 1;", "python": "a = 1"},
+            {"kind": "assignment", "source": "b = 2;", "python": "b = 2"},
+        ]
+        result = _result(total=2, functions=[_func("f", 2)])
+        result["python"] = "def f():\n    a = 1\n    b = 2\n      bork\n"
+        scored = accuracy(result)
+        self.assertEqual(scored["score"], 0.0)
+        self.assertEqual(scored["breakdown"]["unresolved"], 0.0)
+
+    def test_whole_module_parses_keeps_full_score(self):
+        stmts = [
+            {"kind": "assignment", "source": "a = 1;", "python": "a = 1"},
+            {"kind": "assignment", "source": "b = 2;", "python": "b = 2"},
+        ]
+        result = _result(total=2, functions=[_func("f", 2)])
+        result["python"] = "a = 1\nb = 2\n"
+        scored = accuracy(result)
+        self.assertEqual(scored["score"], 100.0)
+        self.assertEqual(scored["breakdown"], {"rulebook": 2.0})
+
+    def test_rulebook_method_reported_when_no_numeric_verdict(self):
+        func = _func("f", 3)
+        result = _result(total=3, checker="inconclusive_no_matlab", functions=[func])
+        scored = accuracy(result)
+        self.assertEqual(scored["score"], 100.0)
+        self.assertIn("rulebook matching", scored["method"])
 
 
 class TestAccuracyIntegration(unittest.TestCase):

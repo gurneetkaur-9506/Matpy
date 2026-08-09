@@ -1,19 +1,30 @@
 """Accuracy scoring for translated output.
 
-Every translated line is assigned a weight based on how trustworthy its
-provenance is:
+The score is based on real correctness, not merely on rule matching:
 
-    score = sum(line_count * weight) / total_lines * 100
+    1. Every generated line must be valid Python.  Each statement's output
+       is validated with ast.parse (loop headers are parsed together with
+       their indented bodies), and the whole generated module is parsed as
+       one unit as well.  A line that does not parse counts as unresolved.
 
-Weights by source:
-    rulebook-resolved lines ......... 1.0  (fully resolved by rules)
-    checker-verified lines .......... 1.0  (numeric cross-check passed)
-    assistant-drafted lines ......... the Assistant's own confidence (0.0-1.0)
-    unresolved lines ................ 0.0  (needs human review)
+    2. Where possible, the score is driven by a numeric comparison against
+       real output rather than by counting matched rules:
+           "verified"  -> the translated output numerically matches the
+                          reference, so every resolved line earns full
+                          weight (1.0);
+           "failed"    -> the numeric comparison found disagreement, so
+                          every resolved line earns weight 0.0.
+       Without a conclusive numeric verdict the score falls back to
+       provenance weights:
+           rulebook-resolved lines ......... 1.0  (fully resolved by rules)
+           assistant-drafted lines ......... the Assistant's confidence
+                                              (0.0-1.0)
+           unresolved lines ................ 0.0  (needs human review)
 
 The score is a single number in 0-100 percent.  The result also reports the
-weighted line contribution of each source so callers can see exactly where
-the score comes from.
+weighted line contribution of each source (``breakdown``) and the ``method``
+that produced the score, so callers can see whether it came from a numeric
+comparison or from rulebook matching.
 """
 
 import ast
@@ -24,7 +35,14 @@ from rulebook import UNRESOLVED
 WEIGHTS = {
     "rulebook": 1.0,
     "verified": 1.0,
+    "failed": 0.0,
     "unresolved": 0.0,
+}
+
+_METHODS = {
+    "verified": "numeric comparison against real output passed",
+    "failed": "numeric comparison against real output failed",
+    "rulebook": "rulebook matching with per-line ast.parse validation",
 }
 
 
@@ -60,8 +78,29 @@ def syntax_error(stmt):
     return None
 
 
-def _is_unresolved_or_invalid(stmt, check_syntax):
+def module_syntax_error(result):
+    """Return a plain-language reason when the whole generated module does not
+    parse, or None when it does.
+
+    Only forward (MATLAB -> Python) output is Python that ast.parse can
+    validate; in the reverse direction the "python" key is the input.
+    """
+    if result.get("direction") == PYTHON_TO_MATLAB:
+        return None
+    code = result.get("python") or ""
+    if not code:
+        return None
+    try:
+        ast.parse(code)
+    except SyntaxError as exc:
+        return "The generated Python module does not parse (%s)." % exc.msg
+    return None
+
+
+def _is_unresolved_or_invalid(stmt, check_syntax, module_invalid=False):
     if stmt.get("python") == UNRESOLVED or stmt.get("matlab") == UNRESOLVED:
+        return True
+    if module_invalid:
         return True
     if check_syntax and syntax_error(stmt) is not None:
         return True
@@ -78,13 +117,23 @@ def _line_weight(item):
         return 0.0
 
 
-def score_mix(items):
+def _method_for(items, fallback):
+    for source in ("verified", "failed"):
+        if any(item["source"] == source for item in items):
+            return _METHODS[source]
+    return fallback
+
+
+def score_mix(items, method=None):
     """Score an explicit per-source line mix.
 
     Args:
         items: List of {"source": str, "lines": int, "weight": float}.
             "lines" is the number of translated lines with that provenance.
             "weight" is the confidence weight; only consulted for "assistant".
+        method: Optional description of how the score was produced.  When
+            omitted, it is derived from the sources present ("verified" or
+            "failed" numeric verdicts, otherwise "rulebook").
 
     Returns:
         Dict with:
@@ -92,6 +141,7 @@ def score_mix(items):
             total_lines: total number of lines
             weighted_lines: sum of line_count * weight
             breakdown: weighted line contribution per source
+            method: how the score was computed
     """
     total = sum(item["lines"] for item in items)
     if total <= 0:
@@ -100,6 +150,7 @@ def score_mix(items):
             "total_lines": 0,
             "weighted_lines": 0.0,
             "breakdown": {},
+            "method": method or "no lines to score",
         }
     weighted = sum(item["lines"] * _line_weight(item) for item in items)
     breakdown = {}
@@ -113,6 +164,7 @@ def score_mix(items):
         "total_lines": total,
         "weighted_lines": round(weighted, 4),
         "breakdown": {k: round(v, 4) for k, v in sorted(breakdown.items())},
+        "method": method or _method_for(items, _METHODS["rulebook"]),
     }
 
 
@@ -129,10 +181,14 @@ def accuracy(result):
     rulebook = sections.get("rulebook", {}) or {}
     total = rulebook.get("total", 0)
     unresolved_total = rulebook.get("unresolved", 0)
-    verified = (sections.get("checker", {}) or {}).get("status") == "verified"
+    checker = sections.get("checker", {}) or {}
+    verdict = checker.get("status")
+    verified = verdict == "verified"
+    failed = verdict == "failed"
     # Only forward (MATLAB -> Python) output is Python that ast.parse can
     # validate; in the reverse direction the "python" key is the input.
     check_syntax = result.get("direction") != PYTHON_TO_MATLAB
+    module_invalid = check_syntax and module_syntax_error(result) is not None
 
     items = []
     func_lines_total = 0
@@ -144,7 +200,9 @@ def accuracy(result):
             continue
         func_lines_total += count
         unresolved = sum(
-            1 for s in statements if _is_unresolved_or_invalid(s, check_syntax)
+            1
+            for s in statements
+            if _is_unresolved_or_invalid(s, check_syntax, module_invalid)
         )
         func_unresolved_total += unresolved
         if verified:
@@ -155,6 +213,10 @@ def accuracy(result):
                 items.append(
                     {"source": "unresolved", "lines": unresolved, "weight": 0.0}
                 )
+        elif failed:
+            # The numeric comparison against real output disagreed, so even
+            # rules that matched cannot be trusted.
+            items.append({"source": "failed", "lines": count, "weight": 0.0})
         elif func.get("draft"):
             resolved = count - unresolved
             if resolved:
@@ -182,7 +244,9 @@ def accuracy(result):
     if script_statements:
         script_lines = len(script_statements)
         script_unresolved = sum(
-            1 for s in script_statements if _is_unresolved_or_invalid(s, check_syntax)
+            1
+            for s in script_statements
+            if _is_unresolved_or_invalid(s, check_syntax, module_invalid)
         )
     else:
         script_lines = max(total - func_lines_total, 0)
@@ -195,6 +259,8 @@ def accuracy(result):
             items.append(
                 {"source": "unresolved", "lines": script_unresolved, "weight": 0.0}
             )
+    elif script_lines and failed:
+        items.append({"source": "failed", "lines": script_lines, "weight": 0.0})
     else:
         if script_resolved:
             items.append({"source": "rulebook", "lines": script_resolved, "weight": 1.0})
@@ -203,4 +269,12 @@ def accuracy(result):
                 {"source": "unresolved", "lines": script_unresolved, "weight": 0.0}
             )
 
-    return score_mix(items)
+    if verified:
+        method = _METHODS["verified"]
+    elif failed:
+        method = _METHODS["failed"]
+    elif check_syntax:
+        method = _METHODS["rulebook"]
+    else:
+        method = "rulebook matching (reverse direction)"
+    return score_mix(items, method=method)
