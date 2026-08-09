@@ -23,6 +23,33 @@ def _parse_matlab(source):
     return _matlab_parser().parse(source.encode("utf-8"))
 
 
+def join_line_continuations(source):
+    """Join any MATLAB line ending in '...' with the next line.
+
+    MATLAB uses '...' as a line-continuation marker: everything from the
+    marker to the end of the line is ignored and the statement continues on
+    the following line.  Returning the source with such pairs merged into a
+    single logical line lets the parser treat them as one statement.
+    """
+    lines = source.splitlines()
+    if not lines:
+        return source
+    merged = []
+    i = 0
+    while i < len(lines):
+        logical = lines[i]
+        while logical.rstrip().endswith("...") and i + 1 < len(lines):
+            logical = logical.rstrip()[: -len("...")].rstrip()
+            i += 1
+            logical = logical + " " + lines[i].lstrip()
+        merged.append(logical)
+        i += 1
+    result = "\n".join(merged)
+    if source.endswith("\n"):
+        result += "\n"
+    return result
+
+
 def _parse_python(source):
     return ast.parse(source)
 
@@ -30,6 +57,8 @@ def _parse_python(source):
 def load_structure_from_source(source, direction):
     if direction not in DIRECTIONS:
         raise ValueError("direction must be one of %s" % (DIRECTIONS,))
+    if direction == MATLAB_TO_PYTHON:
+        source = join_line_continuations(source)
     tree = _parse_python(source) if direction == PYTHON_TO_MATLAB else _parse_matlab(source)
     return build_structure(tree)
 

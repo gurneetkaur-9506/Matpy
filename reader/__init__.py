@@ -10,6 +10,7 @@ from .load_structure import (
     DIRECTIONS,
     MATLAB_TO_PYTHON,
     PYTHON_TO_MATLAB,
+    join_line_continuations,
     load_structure,
     load_structure_from_source,
 )
@@ -22,6 +23,7 @@ __all__ = [
     "build_structure",
     "extract_structure",
     "is_range",
+    "join_line_continuations",
     "load_matlab_file",
     "load_python_file",
     "load_structure",
