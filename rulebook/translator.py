@@ -62,6 +62,7 @@ _OTHER_BUILTINS = {
 PLOT_COMMANDS = {
     "axis": {"func": "plt.axis", "vector": True, "flags": {"auto": "'auto'", "equal": "'equal'", "image": "'scaled'", "normal": "'auto'", "off": "'off'", "on": "'on'", "square": "'square'", "tight": "'tight'"}},
     "axes": {"func": "plt.axes"},
+    "caxis": {"func": "plt.clim", "spread": True},
     "cla": {"func": "plt.cla"},
     "clf": {"func": "plt.clf"},
     "colorbar": {"func": "plt.colorbar"},
@@ -333,6 +334,16 @@ def _flatten_limit_vector(translated):
     return "[%s]" % match.group(1)
 
 
+def _spread_limit_vector(translated):
+    """Unpack a single-row matrix argument into comma-separated scalar args
+    for matplotlib functions that take separate values (plt.clim):
+    ``caxis([a b])`` -> ``a, b``."""
+    match = _LIMIT_ARRAY.match(translated)
+    if match is None:
+        return None
+    return match.group(1)
+
+
 def _translate_plot_command(text):
     """Translate a bare MATLAB plot-styling/config command statement (grid
     on, hold on, shading flat, axis equal, colorbar, ...) through the
@@ -430,6 +441,10 @@ def _translate_expr(expr, scalars=None, declared=None):
                 flat = _flatten_limit_vector(translated[0])
                 if flat is not None:
                     return "%s(%s)" % (spec["func"], flat)
+            if spec.get("spread") and len(translated) == 1:
+                spread = _spread_limit_vector(translated[0])
+                if spread is not None:
+                    return "%s(%s)" % (spec["func"], spread)
             return "%s(%s)" % (spec["func"], ", ".join(translated))
         if name in _OTHER_BUILTINS:
             return UNRESOLVED

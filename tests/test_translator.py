@@ -631,5 +631,23 @@ class TestImagescRule(unittest.TestCase):
         )
 
 
+class TestCaxisRule(unittest.TestCase):
+    def _translate(self, text):
+        structure = Structure(statements=[Statement("function_call", text)])
+        return translate_with_rulebook(structure)["statements"][0]["python"]
+
+    def test_caxis_maps_to_clim(self):
+        self.assertEqual(self._translate("caxis([a b])"), "plt.clim(a, b)")
+
+    def test_caxis_with_numeric_limits(self):
+        self.assertEqual(self._translate("caxis([0 255])"), "plt.clim(0, 255)")
+
+    def test_caxis_non_vector_arg_passes_through(self):
+        self.assertEqual(self._translate("caxis(a)"), "plt.clim(a)")
+
+    def test_caxis_is_never_index_shifted(self):
+        self.assertEqual(self._translate("caxis([a b])"), "plt.clim(a, b)")
+
+
 if __name__ == "__main__":
     unittest.main()
