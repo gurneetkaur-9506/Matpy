@@ -3,6 +3,9 @@ FROM python:3.11-slim
 # Qt/X11 runtime libraries required by PyQt5 (see docs/runtime_dependencies.md)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libgl1 \
+    libglib2.0-0 \
+    libfontconfig1 \
+    libfreetype6 \
     libxkbcommon-x11-0 \
     libdbus-1-3 \
     libxcb-icccm4 \
