@@ -1,5 +1,4 @@
 import ast
-import keyword
 import re
 
 from reader.extract_structure import split_range
@@ -8,6 +7,13 @@ from .builtin_rules import BUILTIN_RULES, apply_builtin_rule, apply_builtin_rule
 from .complex_rules import apply_complex_rule
 from .format_rules import convert_fprintf
 from .indexing_rules import apply_indexing_rule, apply_indexing_rule_reverse
+from .keyword_rules import (
+    identifier_tokens,
+    rename_comment,
+    rename_for,
+    rename_text,
+    should_rename,
+)
 from .multi_output_rules import (
     _REDUCTION_CALLS,
     _dim_to_axis,
@@ -571,9 +577,10 @@ def _loop_source(loop):
     return "%s %s\n%s\nend" % (loop.type, loop.header, body)
 
 
-def _translate_loop(stmt, scalars=None, declared=None, io=None):
+def _translate_loop(stmt, scalars=None, declared=None, io=None, renames=None, first_seen=None):
     feof_line = translate_feof_loop(stmt.header, stmt.statements, io)
     if feof_line is not None:
+        feof_line = rename_text(feof_line, renames) if renames else feof_line
         return {
             "kind": "loop",
             "source": _loop_source(stmt),
@@ -582,19 +589,25 @@ def _translate_loop(stmt, scalars=None, declared=None, io=None):
             "body": [],
         }
     source = _loop_source(stmt)
-    header = "%s %s" % (stmt.type, stmt.header)
+    header_text = rename_text(stmt.header, renames) if renames else stmt.header
+    header = "%s %s" % (stmt.type, header_text)
+    result = {"kind": "loop", "source": source}
+    _attach_renames(result, stmt.header, renames, first_seen)
     body_declared = set(declared) if declared else set()
-    body_declared.add(_loop_variable(stmt))
+    loop_var = _loop_variable(stmt)
+    body_declared.add(renames.get(loop_var, loop_var) if renames else loop_var)
     body = []
     for s in stmt.statements:
-        body.append(_translate_statement(s, scalars, body_declared, io))
+        body.append(
+            _translate_statement(s, scalars, body_declared, io, renames, first_seen)
+        )
         target = _declare_target(s.text) if hasattr(s, "kind") else None
         if target:
-            body_declared.add(target)
+            body_declared.add(renames.get(target, target) if renames else target)
     if any(s["python"] == UNRESOLVED for s in body):
         return {"kind": "loop", "source": source, "python": UNRESOLVED}
 
-    var, eq, expr = stmt.header.partition("=")
+    var, eq, expr = header_text.partition("=")
     if not eq or ":" not in expr:
         return {"kind": "loop", "source": source, "python": UNRESOLVED}
     converted = apply_indexing_rule(expr.strip())
@@ -605,16 +618,13 @@ def _translate_loop(stmt, scalars=None, declared=None, io=None):
         loop_py = "for %s in range(%s):" % (var.strip(), stop)
     else:
         loop_py = "for %s in range(%s, %s):" % (var.strip(), start, stop)
-    return {
-        "kind": "loop",
-        "source": source,
-        "python": loop_py,
-        "comment": "# MATLAB: %s; -> Python: %s" % (header, loop_py),
-        "body": body,
-    }
+    result["python"] = loop_py
+    result["comment"] = "# MATLAB: %s; -> Python: %s" % (header, loop_py)
+    result["body"] = body
+    return result
 
 
-def _record_scalar(stmt, scalars):
+def _record_scalar(stmt, scalars, renames=None):
     """Track variables assigned scalar values (e.g. fs = 1000) so a later
     '/' with that variable is recognized as scalar division.  Compound
     scalar expressions (``timeDelay = 2 * targetRange / c``) and
@@ -622,7 +632,8 @@ def _record_scalar(stmt, scalars):
     tracked too."""
     if scalars is None or not hasattr(stmt, "kind") or stmt.kind != "assignment":
         return
-    target, value = _split_assignment(stmt.text)
+    text = rename_text(stmt.text, renames) if renames else stmt.text
+    target, value = _split_assignment(text)
     if target is None or value is None:
         return
     if "(" in target:
@@ -636,40 +647,47 @@ def _record_scalar(stmt, scalars):
         scalars.add(target.strip())
 
 
-def _translate_statement(stmt, scalars=None, declared=None, io=None):
+def _translate_statement(stmt, scalars=None, declared=None, io=None, renames=None, first_seen=None):
     if not hasattr(stmt, "kind"):
-        return _translate_loop(stmt, scalars, declared, io)
+        return _translate_loop(stmt, scalars, declared, io, renames, first_seen)
+    text = rename_text(stmt.text, renames) if renames else stmt.text
     if stmt.kind == "command":
-        if stmt.text in _COMMANDS:
-            return {
+        if text in _COMMANDS:
+            result = {
                 "kind": stmt.kind,
                 "source": stmt.text,
-                "python": _COMMANDS[stmt.text],
-                "comment": _comment_for(stmt, _COMMANDS[stmt.text]),
+                "python": _COMMANDS[text],
+                "comment": _comment_for(stmt, _COMMANDS[text]),
             }
-        plot_line = _translate_plot_command(stmt.text)
-        if plot_line is not None:
-            return {
-                "kind": stmt.kind,
-                "source": stmt.text,
-                "python": plot_line,
-                "comment": _comment_for(stmt, plot_line),
-            }
-        return {"kind": stmt.kind, "source": stmt.text, "python": UNRESOLVED}
+        else:
+            plot_line = _translate_plot_command(text)
+            if plot_line is not None:
+                result = {
+                    "kind": stmt.kind,
+                    "source": stmt.text,
+                    "python": plot_line,
+                    "comment": _comment_for(stmt, plot_line),
+                }
+            else:
+                result = {"kind": stmt.kind, "source": stmt.text, "python": UNRESOLVED}
+        _attach_renames(result, stmt.text, renames, first_seen)
+        return result
 
     if stmt.kind == "while_statement":
-        feof_line = translate_feof_statement(stmt.text, io)
+        feof_line = translate_feof_statement(text, io)
         if feof_line is not None:
-            return {
+            result = {
                 "kind": stmt.kind,
                 "source": stmt.text,
                 "python": feof_line,
                 "comment": _comment_for(stmt, feof_line),
             }
+            _attach_renames(result, stmt.text, renames, first_seen)
+            return result
         return {"kind": stmt.kind, "source": stmt.text, "python": UNRESOLVED}
 
     if stmt.kind == "assignment":
-        target, value = _split_assignment(stmt.text)
+        target, value = _split_assignment(text)
         if value is None:
             return {"kind": stmt.kind, "source": stmt.text, "python": UNRESOLVED}
         fopen_result = translate_fopen(target, value)
@@ -677,32 +695,38 @@ def _translate_statement(stmt, scalars=None, declared=None, io=None):
             python, record = fopen_result
             if io is not None:
                 io[target] = record
-            return {
+            result = {
                 "kind": stmt.kind,
                 "source": stmt.text,
                 "python": python,
                 "comment": _comment_for(stmt, python),
             }
+            _attach_renames(result, stmt.text, renames, first_seen)
+            return result
         fscanf_line = translate_fscanf(target, value, io)
         if fscanf_line is not None:
-            return {
+            result = {
                 "kind": stmt.kind,
                 "source": stmt.text,
                 "python": fscanf_line,
                 "comment": _comment_for(stmt, fscanf_line),
             }
+            _attach_renames(result, stmt.text, renames, first_seen)
+            return result
         if target.startswith("[") and target.endswith("]"):
             lines = translate_multi_output_assignment(
                 target, value, lambda a: _translate_expr(a, scalars, declared)
             )
             if lines is not None:
                 python = "\n".join(lines)
-                return {
+                result = {
                     "kind": stmt.kind,
                     "source": stmt.text,
                     "python": python,
                     "comment": _comment_for(stmt, python),
                 }
+                _attach_renames(result, stmt.text, renames, first_seen)
+                return result
             if "~" in target:
                 return {"kind": stmt.kind, "source": stmt.text, "python": UNRESOLVED}
         value_py = _translate_expr(value, scalars, declared)
@@ -710,23 +734,27 @@ def _translate_statement(stmt, scalars=None, declared=None, io=None):
             return {"kind": stmt.kind, "source": stmt.text, "python": UNRESOLVED}
         target_py = apply_indexing_rule(target) if "(" in target else target
         python = "%s = %s" % (target_py, value_py)
-        return {
+        result = {
             "kind": stmt.kind,
             "source": stmt.text,
             "python": python,
             "comment": _comment_for(stmt, python),
         }
+        _attach_renames(result, stmt.text, renames, first_seen)
+        return result
 
     if stmt.kind == "function_call":
-        python = _translate_expr(stmt.text, scalars, declared)
+        python = _translate_expr(text, scalars, declared)
         if python == UNRESOLVED:
             return {"kind": stmt.kind, "source": stmt.text, "python": UNRESOLVED}
-        return {
+        result = {
             "kind": stmt.kind,
             "source": stmt.text,
             "python": python,
             "comment": _comment_for(stmt, python),
         }
+        _attach_renames(result, stmt.text, renames, first_seen)
+        return result
 
     return {"kind": stmt.kind, "source": stmt.text, "python": UNRESOLVED}
 
@@ -749,11 +777,12 @@ def _declare_target(text):
     return match.group(1) if match else None
 
 
-def _indexed_reference_matrix(loop, var, target, declared):
+def _indexed_reference_matrix(loop, var, target, declared, renames=None):
     for body_stmt in loop.statements:
         if not hasattr(body_stmt, "kind"):
             continue
-        for match in _INDEXED_REF.finditer(body_stmt.text):
+        text = rename_text(body_stmt.text, renames) if renames else body_stmt.text
+        for match in _INDEXED_REF.finditer(text):
             name = match.group(1)
             if name == target:
                 continue
@@ -785,23 +814,30 @@ def _build_preallocate(target, ref_matrix):
     }
 
 
-def _preallocations_for_loop(loop, declared):
+def _preallocations_for_loop(loop, declared, renames=None, first_seen=None):
     var = _loop_variable(loop)
     if not var:
         return []
+    if renames:
+        var = renames.get(var, var)
     preallocations = []
     for body_stmt in loop.statements:
         if not hasattr(body_stmt, "kind") or body_stmt.kind != "assignment":
             continue
-        match = _INDEXED_ASSIGN.match(body_stmt.text)
+        text = rename_text(body_stmt.text, renames) if renames else body_stmt.text
+        match = _INDEXED_ASSIGN.match(text)
         if not match:
             continue
         target = match.group(1)
         index_tokens = [t.strip() for t in match.group(2).split(",")]
         if target in declared or var not in index_tokens:
             continue
-        ref_matrix = _indexed_reference_matrix(loop, var, target, declared)
-        preallocations.append(_build_preallocate(target, ref_matrix))
+        ref_matrix = _indexed_reference_matrix(
+            loop, var, target, declared, renames
+        )
+        preallocate = _build_preallocate(target, ref_matrix)
+        _attach_renames(preallocate, body_stmt.text, renames, first_seen)
+        preallocations.append(preallocate)
     return preallocations
 
 
@@ -919,46 +955,81 @@ def assert_block_invariant(result):
         )
 
 
-def _apply_identifier_rename(statements, rename):
-    """Rewrite translated Python so any MATLAB identifier that collides with
-    a Python keyword (e.g. ``lambda``) is renamed consistently across the
-    function signature, body, and return lines.  The walk is recursive so
-    nested loop bodies are covered too."""
-    if not rename:
-        return
-    patterns = {name: re.compile(r"\b%s\b" % name) for name in rename}
+def _collect_names(statements, names):
+    """Collect every variable identifier used across a list of reader
+    statements into ``names``, recursing into loop bodies so reserved-word
+    collisions are detected for loop variables and nested bodies too."""
     for stmt in statements:
-        py = stmt.get("python")
-        if isinstance(py, str) and py != UNRESOLVED:
-            for name, pattern in patterns.items():
-                stmt["python"] = pattern.sub(rename[name], py)
-                py = stmt["python"]
-        body = stmt.get("body")
-        if body:
-            _apply_identifier_rename(body, rename)
+        if hasattr(stmt, "kind"):
+            for _, _, ident in identifier_tokens(stmt.text):
+                names.add(ident)
+        else:
+            for _, _, ident in identifier_tokens(stmt.header):
+                names.add(ident)
+            _collect_names(stmt.statements, names)
+
+
+def _compute_renames(statements, params=(), outputs=(), name=None):
+    """Build the per-file rename map for MATLAB identifiers that collide
+    with Python reserved words.
+
+    A MATLAB variable may legally be named ``lambda``, ``class``, ``type``
+    or any other Python keyword/builtin.  Every such identifier appearing
+    in the parameters, outputs, function name, loop headers, or statement
+    text of this function/script is mapped to its ``name_`` form so the
+    generated Python is valid and never silently shadows a builtin.
+    """
+    names = set(params)
+    names.update(outputs)
+    if name:
+        names.add(name)
+    _collect_names(statements, names)
+    renames = {}
+    for ident in names:
+        if should_rename(ident):
+            renames[ident] = rename_for(ident)
+    return renames, set()
+
+
+def _attach_renames(stmt, text, renames, first_seen):
+    """Record a rename note comment on ``stmt`` the first time each renamed
+    MATLAB identifier appears in ``text`` (a single set is threaded through
+    the whole translation so the note is emitted exactly once per name)."""
+    if not renames:
+        return
+    comments = []
+    for _, _, ident in identifier_tokens(text):
+        if ident in renames and ident not in first_seen:
+            first_seen.add(ident)
+            comments.append(rename_comment(ident))
+    if comments:
+        stmt["renamed"] = comments
 
 
 def _translate_function(func):
-    declared = set(func.parameters)
+    renames, first_seen = _compute_renames(
+        func.statements, func.parameters, func.outputs, func.name
+    )
+    declared = {renames.get(p, p) for p in func.parameters}
     scalars = set()
     io = {}
-    rename = {
-        p: p + "_" for p in func.parameters if p in keyword.kwlist
-    }
     translated = []
     for stmt in func.statements:
         if _is_loop(stmt):
-            translated.extend(_preallocations_for_loop(stmt, declared))
-        translated.append(_translate_statement(stmt, scalars, declared, io))
-        _record_scalar(stmt, scalars)
+            translated.extend(
+                _preallocations_for_loop(stmt, declared, renames, first_seen)
+            )
+        translated.append(
+            _translate_statement(stmt, scalars, declared, io, renames, first_seen)
+        )
+        _record_scalar(stmt, scalars, renames)
         target = _declare_target(stmt.text) if hasattr(stmt, "kind") else None
         if target:
-            declared.add(target)
-    _apply_identifier_rename(translated, rename)
+            declared.add(renames.get(target, target))
     return {
-        "name": rename.get(func.name, func.name),
-        "parameters": [rename.get(p, p) for p in func.parameters],
-        "outputs": [rename.get(o, o) for o in func.outputs],
+        "name": renames.get(func.name, func.name),
+        "parameters": [renames.get(p, p) for p in func.parameters],
+        "outputs": [renames.get(o, o) for o in func.outputs],
         "statements": translated,
     }
 
@@ -970,12 +1041,15 @@ def translate_with_rulebook(structure):
     scalars = set()
     declared = set()
     io = {}
+    renames, first_seen = _compute_renames(structure.statements)
     for stmt in structure.statements:
-        result["statements"].append(_translate_statement(stmt, scalars, declared, io))
-        _record_scalar(stmt, scalars)
+        result["statements"].append(
+            _translate_statement(stmt, scalars, declared, io, renames, first_seen)
+        )
+        _record_scalar(stmt, scalars, renames)
         target = _declare_target(stmt.text) if hasattr(stmt, "kind") else None
         if target:
-            declared.add(target)
+            declared.add(renames.get(target, target))
     result["statements"] = collapse_unresolved_blocks(result["statements"])
     for func in result["functions"]:
         func["statements"] = collapse_unresolved_blocks(func["statements"])

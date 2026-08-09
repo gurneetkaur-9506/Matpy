@@ -54,6 +54,8 @@ def _emit_block(statements, lines, indent="", problems=None):
                 problems.append(len(lines))
             _emit_unresolved_comment(stmt.get("source"), lines, indent, "#")
             continue
+        for comment in stmt.get("renamed") or ():
+            lines.append(indent + comment)
         if "\n" in stmt["python"]:
             for sub in stmt["python"].split("\n"):
                 lines.append(indent + sub)

@@ -319,7 +319,26 @@ class TestReportWithBeamform(unittest.TestCase):
         result = translate_file(BEAMFORM_MATLAB)
         ast.parse(result["python"])
         self.assertIn("lambda_", result["python"])
-        self.assertNotIn("lambda", result["python"].replace("lambda_", ""))
+        code = "\n".join(
+            line
+            for line in result["python"].splitlines()
+            if not line.strip().startswith("#")
+        )
+        self.assertNotIn("lambda", code.replace("lambda_", ""))
+
+    def test_beamform_reserved_keyword_lambda_renamed(self):
+        result = translate_file(BEAMFORM_MATLAB)
+        self.assertIn(
+            "def beamform_basic(N, d, lambda_, theta, theta0):", result["python"]
+        )
+        self.assertIn(
+            "# renamed: MATLAB 'lambda' -> Python 'lambda_' (reserved keyword)",
+            result["python"],
+        )
+        self.assertIn("k = 2 * pi / lambda_", result["python"])
+        self.assertNotIn("k = 2 * pi / lambda\n", result["python"])
+        syntax_sources = {e["source"] for e in build_translation_report(result)}
+        self.assertNotIn("k = 2 * pi / lambda", syntax_sources)
 
     @mock.patch(
         "assistant.draft_translation._call_ollama",
