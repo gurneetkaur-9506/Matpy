@@ -1,0 +1,39 @@
+# Run the PyQt5 GUI in a container and display the window on the host.
+#
+# The container has no display of its own, so the X server must live on the
+# host and the container must be told where to find it via the DISPLAY
+# environment variable.
+#
+# WINDOWS (Docker Desktop + VcXsrv):
+#   1. Install and start VcXsrv (XLaunch): choose "Multiple windows",
+#      set "Display number" to 0, and on the "Extra settings" page tick
+#      "-ac" (disable access control) so the container may connect.
+#   2. Launch the stack with:
+#        docker compose up
+#   3. Docker Desktop resolves "host.docker.internal" to the host machine, so
+#      the container's DISPLAY points at VcXsrv running on the host.
+#      (On older setups you may instead need DISPLAY=<host-ip>:0.)
+#
+# LINUX (native X11):
+#   The volume mounts the host's /tmp/.X11-unix socket and DISPLAY is passed
+#   through as-is, so an existing local X server is used directly.
+#
+# macOS:
+#   Use XQuartz, start it, then `export DISPLAY=host.docker.internal:0` (or
+#   your LAN IP) and allow network connections from the app.
+
+services:
+  matpy-gui:
+    build: .
+    environment:
+      # Windows / macOS: VcXsrv / XQuartz reachable via the Docker Desktop
+      # gateway. Windows users must run VcXsrv with "-ac" enabled.
+      - DISPLAY=host.docker.internal:0
+    volumes:
+      # Linux only: expose the host X11 socket. Harmless on other platforms.
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      # Share the host filesystem so files opened/saved by the GUI are real.
+      - .:/app
+    stdin_open: true
+    tty: true
+    command: python ui/translator_window.py
