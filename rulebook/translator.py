@@ -457,6 +457,19 @@ def _translate_expr(expr, scalars=None, declared=None):
             if any(t == UNRESOLVED for t in translated):
                 return UNRESOLVED
             return "np.interp(%s, %s, %s)" % (translated[2], translated[0], translated[1])
+        if name == "imagesc":
+            args = _split_top_level(argtext, ",")
+            if len(args) != 3:
+                return UNRESOLVED
+            translated = [_translate_expr(a, scalars, declared) for a in args]
+            if any(t == UNRESOLVED for t in translated):
+                return UNRESOLVED
+            x, y, z = translated
+            return (
+                "plt.imshow(%s, extent=[%s[0],%s[-1],%s[0],%s[-1]], "
+                "origin='lower', aspect='auto')"
+                % (z, x, x, y, y)
+            )
         args = _split_top_level(argtext, ",")
         if args and all(_is_index_like(a) for a in args):
             if declared is not None and name in declared:

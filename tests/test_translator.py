@@ -608,5 +608,28 @@ class TestRangesInAnyContext(unittest.TestCase):
             compile(py.split(" = ", 1)[1], "<test>", "eval")
 
 
+class TestImagescRule(unittest.TestCase):
+    def _translate(self, text):
+        structure = Structure(statements=[Statement("function_call", text)])
+        return translate_with_rulebook(structure)["statements"][0]["python"]
+
+    def test_imagesc_maps_to_imshow_with_extent(self):
+        self.assertEqual(
+            self._translate("imagesc(x, y, Z)"),
+            "plt.imshow(Z, extent=[x[0],x[-1],y[0],y[-1]], origin='lower', aspect='auto')",
+        )
+
+    def test_imagesc_wrong_arity_stays_unresolved(self):
+        self.assertEqual(self._translate("imagesc(x, y)"), UNRESOLVED)
+        self.assertEqual(self._translate("imagesc(Z)"), UNRESOLVED)
+        self.assertEqual(self._translate("imagesc(x, y, Z, extra)"), UNRESOLVED)
+
+    def test_imagesc_is_never_index_shifted(self):
+        self.assertEqual(
+            self._translate("imagesc(x, y, Z)"),
+            "plt.imshow(Z, extent=[x[0],x[-1],y[0],y[-1]], origin='lower', aspect='auto')",
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
