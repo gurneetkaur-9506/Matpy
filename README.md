@@ -27,3 +27,30 @@ The Checker validates the generated Python before it is accepted. It re-parses t
 ## Companion Modules
 
 The project also includes a UI for driving the translation process and a reference_set of paired MATLAB and Python examples used to develop and validate rules.
+
+## Run with Docker
+
+The app is a PyQt5 desktop GUI. Running it in Docker displays the window on your machine, so no MATLAB or Python installation is needed.
+
+### Windows (one-time X server setup)
+
+The container has no screen of its own, so Windows needs an X server to draw the window:
+
+1. Install and start **VcXsrv** (XLaunch): choose "Multiple windows", Display number `0`, and on the "Extra settings" page tick **`-ac`** (disable access control).
+
+### Every platform
+
+Copy-paste these commands in order:
+
+```
+docker compose up
+```
+
+That's it — `docker compose up` builds the image and launches the GUI on your display. If you prefer plain Docker instead of Compose, run:
+
+```
+docker build -t matpy .
+docker run --rm -e DISPLAY=host.docker.internal:0 matpy
+```
+
+On Linux, replace the `DISPLAY` value with your own (e.g. `:0`) and add `-v /tmp/.X11-unix:/tmp/.X11-unix:rw` to the `docker run` command.
