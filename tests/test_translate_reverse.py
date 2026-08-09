@@ -179,5 +179,16 @@ class TestTranslateWithRulebookReverse(unittest.TestCase):
         )
 
 
+    def test_plt_title_maps_to_matlab_title(self):
+        self.assertEqual(
+            self._translate_expr_stmt("plt.title('t')"),
+            "title('t');",
+        )
+        self.assertEqual(
+            self._translate_expr_stmt('plt.title("Frequency Spectrum")'),
+            'title("Frequency Spectrum");',
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
