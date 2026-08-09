@@ -702,5 +702,30 @@ class TestZlabelRule(unittest.TestCase):
         )
 
 
+class TestViewRule(unittest.TestCase):
+    def _translate(self, text):
+        structure = Structure(statements=[Statement("function_call", text)])
+        return translate_with_rulebook(structure)["statements"][0]["python"]
+
+    def test_view_maps_to_view_init(self):
+        self.assertEqual(
+            self._translate("view(30, 45)"), "ax.view_init(elev=45, azim=30)"
+        )
+
+    def test_view_with_identifier_args(self):
+        self.assertEqual(
+            self._translate("view(az, el)"), "ax.view_init(elev=el, azim=az)"
+        )
+
+    def test_view_wrong_arity_stays_unresolved(self):
+        self.assertEqual(self._translate("view(30)"), UNRESOLVED)
+        self.assertEqual(self._translate("view(30, 45, 60)"), UNRESOLVED)
+
+    def test_view_is_never_index_shifted(self):
+        self.assertEqual(
+            self._translate("view(30, 45)"), "ax.view_init(elev=45, azim=30)"
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -499,6 +499,15 @@ def _translate_expr(expr, scalars=None, declared=None):
                 "ax.plot_surface(%s)"
                 % ", ".join(translated)
             )
+        if name == "view":
+            args = _split_top_level(argtext, ",")
+            if len(args) != 2:
+                return UNRESOLVED
+            translated = [_translate_expr(a, scalars, declared) for a in args]
+            if any(t == UNRESOLVED for t in translated):
+                return UNRESOLVED
+            az, el = translated
+            return "ax.view_init(elev=%s, azim=%s)" % (el, az)
         args = _split_top_level(argtext, ",")
         if args and all(_is_index_like(a) for a in args):
             if declared is not None and name in declared:
