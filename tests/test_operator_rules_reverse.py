@@ -42,6 +42,26 @@ class TestApplyOperatorRuleReverse(unittest.TestCase):
             "A(1,:) .* B(2,:)",
         )
 
+    def test_scalar_floor_division(self):
+        self.assertEqual(apply_operator_rule_reverse("7 // 2"), "floor(7 / 2)")
+        self.assertEqual(
+            apply_operator_rule_reverse("2.5 // 1.2"), "floor(2.5 / 1.2)"
+        )
+        self.assertEqual(apply_operator_rule_reverse("pi // 2"), "floor(pi / 2)")
+
+    def test_array_floor_division(self):
+        self.assertEqual(apply_operator_rule_reverse("a // b"), "floor(a ./ b)")
+        self.assertEqual(apply_operator_rule_reverse("x // y"), "floor(x ./ y)")
+        self.assertEqual(
+            apply_operator_rule_reverse("(x + y) // z"), "floor((x + y) ./ z)"
+        )
+
+    def test_floor_division_never_double_slash(self):
+        self.assertNotIn("//", apply_operator_rule_reverse("a // b"))
+        self.assertNotIn("./ ./", apply_operator_rule_reverse("a // b"))
+        self.assertNotIn("//", apply_operator_rule_reverse("7 // 2"))
+        self.assertNotIn("./ ./", apply_operator_rule_reverse("7 // 2"))
+
     def test_no_operator_passthrough(self):
         self.assertEqual(apply_operator_rule_reverse("a + b"), "a + b")
         self.assertEqual(apply_operator_rule_reverse("sin(x)"), "sin(x)")
