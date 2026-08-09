@@ -544,6 +544,17 @@ def _translate_expr(expr, scalars=None, declared=None):
                 _TRIG_DEGREES[name][0],
                 translated[0],
             )
+        if name == "fft":
+            args = [a.strip() for a in _split_top_level(argtext, ",") if a.strip()]
+            if len(args) == 3 and args[1] == "[]":
+                axis = _dim_to_axis(args[2])
+                if axis is None:
+                    return UNRESOLVED
+                translated = _translate_expr(args[0], scalars, declared)
+                if translated == UNRESOLVED:
+                    return UNRESOLVED
+                return "np.fft.fft(%s, axis=%s)" % (translated, axis)
+            return _translate_builtin_call(name, argtext, scalars, declared)
         if name in BUILTIN_RULES:
             return _translate_builtin_call(name, argtext, scalars, declared)
         if name in PLOT_COMMANDS:

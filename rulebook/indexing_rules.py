@@ -1,6 +1,6 @@
 import re
 
-from .index_shift import FORWARD, REVERSE, shift_index
+from .index_shift import FORWARD, REVERSE, UNRESOLVED, shift_index
 
 INDEXING_RULES = {
     "1_based_offset": 1,
@@ -126,6 +126,14 @@ def _convert_range_part(part, is_start):
     match = re.fullmatch(patterns["end_minus_int"], part)
     if match:
         return "-" + match.group(1)
+    if is_start and not re.fullmatch(r"length\s*\(.*\)", part):
+        # A slice start is a MATLAB index, so a compound expression such as
+        # samplesDelay+1 must be shifted down by one (samplesDelay).  The
+        # shared primitive folds the +-1 offset into the trailing constant
+        # term; length() calls are normalized to len() afterwards.
+        shifted = shift_index(part, FORWARD)
+        if shifted != part and shifted != UNRESOLVED:
+            return shifted.replace("length(", "len(")
     return apply_indexing_rule(part)
 
 

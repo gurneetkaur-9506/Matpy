@@ -349,6 +349,36 @@ class TestFindReductionComposition(unittest.TestCase):
         self.assertEqual(self._translate("y = interp1(x, v)"), UNRESOLVED)
 
 
+class TestFFTDimensionRule(unittest.TestCase):
+    """fft(X, [], dim) -- the MATLAB dimension-specified FFT used for the
+    Doppler axis -- maps to np.fft.fft(X, axis=dim-1)."""
+
+    def _translate(self, text):
+        structure = Structure(statements=[Statement("assignment", text)])
+        return translate_with_rulebook(structure)["statements"][0]["python"]
+
+    def test_fft_with_literal_dimension(self):
+        self.assertEqual(
+            self._translate("Y = fft(x, [], 2)"), "Y = np.fft.fft(x, axis=1)"
+        )
+
+    def test_fft_with_doppler_dimension_variable(self):
+        self.assertEqual(
+            self._translate("Y = fft(dataCube, [], dopplerDim)"),
+            "Y = np.fft.fft(dataCube, axis=(dopplerDim - 1))",
+        )
+
+    def test_plain_fft_unaffected(self):
+        self.assertEqual(
+            self._translate("Y = fft(x)"), "Y = np.fft.fft(x)"
+        )
+
+    def test_fft_with_nfft_unaffected(self):
+        self.assertEqual(
+            self._translate("Y = fft(x, 512)"), "Y = np.fft.fft(x, 512)"
+        )
+
+
 class TestProblemLineCollection(unittest.TestCase):
     @classmethod
     def setUpClass(cls):

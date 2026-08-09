@@ -45,5 +45,37 @@ class TestApplyIndexingRule(unittest.TestCase):
         self.assertEqual(apply_indexing_rule("a+b"), "a+b")
 
 
+class TestSliceStartShifting(unittest.TestCase):
+    """A MATLAB slice start is 1-based, so a compound start expression such
+    as ``samplesDelay+1`` must be shifted down by one.  The shared
+    shift_index primitive is exercised here through apply_indexing_rule."""
+
+    def test_var_plus_one_start_shifts_to_var(self):
+        self.assertEqual(
+            apply_indexing_rule("x(samplesDelay+1:samplesDelay+5)"),
+            "x[samplesDelay:samplesDelay+5]",
+        )
+
+    def test_var_plus_larger_constant_start(self):
+        self.assertEqual(
+            apply_indexing_rule("x(samplesDelay+3:samplesDelay+7)"),
+            "x[samplesDelay + 2:samplesDelay+7]",
+        )
+
+    def test_compound_stop_kept(self):
+        self.assertEqual(
+            apply_indexing_rule("x(2:samplesDelay+length(txPulse))"),
+            "x[1:samplesDelay+len(txPulse)]",
+        )
+
+    def test_radar_program_slice_expression(self):
+        self.assertEqual(
+            apply_indexing_rule(
+                "rxSignal(samplesDelay+1:samplesDelay+length(txPulse))"
+            ),
+            "rxSignal[samplesDelay:samplesDelay+len(txPulse)]",
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
