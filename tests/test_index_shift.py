@@ -39,19 +39,58 @@ class TestShiftIndexReverse(unittest.TestCase):
 
 
 class TestShiftIndexPassThrough(unittest.TestCase):
-    """Non-literal index expressions are returned unchanged."""
+    """Ranges and end-keywords are left to the richer indexing rules."""
 
     def test_identifier_unchanged(self):
         self.assertEqual(shift_index("i", FORWARD), "i")
         self.assertEqual(shift_index("i", REVERSE), "i")
 
-    def test_computed_expression_unchanged(self):
-        self.assertEqual(shift_index("i + 1", FORWARD), "i + 1")
-        self.assertEqual(shift_index("2 * k", REVERSE), "2 * k")
+    def test_colon_range_unchanged(self):
+        self.assertEqual(shift_index("1:5", FORWARD), "1:5")
+        self.assertEqual(shift_index("i:j", REVERSE), "i:j")
 
     def test_end_keyword_unchanged(self):
         self.assertEqual(shift_index("end", FORWARD), "end")
-        self.assertEqual(shift_index("end - 1", REVERSE), "end - 1")
+        self.assertEqual(shift_index("end", REVERSE), "end")
+
+
+class TestShiftIndexArithmetic(unittest.TestCase):
+    """An arithmetic index expression is shifted by folding the offset
+    into its constant term."""
+
+    def test_forward_plus_one_folds_to_zero(self):
+        self.assertEqual(shift_index("i + 1", FORWARD), "i")
+
+    def test_forward_minus_one_becomes_minus_two(self):
+        self.assertEqual(shift_index("i - 1", FORWARD), "i - 2")
+
+    def test_forward_plus_five_becomes_plus_four(self):
+        self.assertEqual(shift_index("i + 5", FORWARD), "i + 4")
+
+    def test_forward_minus_five_becomes_minus_six(self):
+        self.assertEqual(shift_index("i - 5", FORWARD), "i - 6")
+
+    def test_reverse_plus_one_becomes_plus_two(self):
+        self.assertEqual(shift_index("i + 1", REVERSE), "i + 2")
+
+    def test_reverse_minus_one_folds_to_zero(self):
+        self.assertEqual(shift_index("i - 1", REVERSE), "i")
+
+    def test_reverse_plus_five_becomes_plus_six(self):
+        self.assertEqual(shift_index("i + 5", REVERSE), "i + 6")
+
+    def test_reverse_minus_five_becomes_minus_four(self):
+        self.assertEqual(shift_index("i - 5", REVERSE), "i - 4")
+
+    def test_expression_without_constant_is_wrapped(self):
+        self.assertEqual(shift_index("2 * k", FORWARD), "(2 * k) - 1")
+        self.assertEqual(shift_index("2 * k", REVERSE), "(2 * k) + 1")
+
+    def test_constant_on_the_left_is_wrapped(self):
+        self.assertEqual(shift_index("1 + i", FORWARD), "(1 + i) - 1")
+
+    def test_end_minus_constant_shifts(self):
+        self.assertEqual(shift_index("end - 1", REVERSE), "end")
 
 
 class TestShiftIndexVariables(unittest.TestCase):
@@ -95,8 +134,11 @@ class TestShiftIndexedAccess(unittest.TestCase):
         self.assertEqual(shift_index("x(1, 2)", FORWARD), "x[0, 1]")
         self.assertEqual(shift_index("x[1, 2]", REVERSE), "x(2, 3)")
 
-    def test_computed_index_inside_unchanged(self):
-        self.assertEqual(shift_index("x(i + 1)", FORWARD), "x[i + 1]")
+    def test_arithmetic_index_inside_shifts(self):
+        self.assertEqual(shift_index("x(i + 1)", FORWARD), "x[i]")
+        self.assertEqual(shift_index("x[i + 1]", REVERSE), "x(i + 2)")
+        self.assertEqual(shift_index("x(i - 1)", FORWARD), "x[i - 2]")
+        self.assertEqual(shift_index("x[i - 1]", REVERSE), "x(i)")
 
 
 class TestShiftIndexValidation(unittest.TestCase):

@@ -6,7 +6,7 @@ must be shifted by one when moving between the two languages.
 use: 'forward' (MATLAB -> Python) subtracts one, 'reverse' (Python ->
 MATLAB) adds one.
 
-The primitive recognizes three forms of index:
+The primitive recognizes four forms of index:
 
 - a literal integer, which is shifted by one (5 -> 4 forward, 5 -> 6
   reverse);
@@ -16,11 +16,14 @@ The primitive recognizes three forms of index:
 - an indexed access such as ``x(i)`` / ``x[i]``, whose parentheses or
   brackets are converted to the target language's syntax and whose inner
   index is shifted recursively (x(5) -> x[4] forward, x[i] -> x(i)
-  reverse).
+  reverse);
+- an arithmetic index expression such as ``i + 1``, shifted by folding
+  the offset into its trailing constant term (i + 1 -> i forward,
+  i - 1 -> i reverse); an expression without a foldable constant is
+  wrapped instead (2*k -> (2*k) - 1 forward).
 
-Computed index expressions (``i + 1``), end-keywords and ranges are
-passed through unchanged; their adjustment belongs to the richer
-indexing rules that call this primitive.
+Colon-ranges and end-keywords pass through unchanged; their adjustment
+belongs to the richer indexing rules that call this primitive.
 """
 
 import re
@@ -33,6 +36,7 @@ _VALID_DIRECTIONS = (FORWARD, REVERSE)
 _INTEGER_LITERAL = re.compile(r"^-?\d+$")
 _IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 _INDEXED_ACCESS = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)\s*[\(\[](.*)[\)\]]$")
+_TRAILING_CONSTANT = re.compile(r"^(.+?)\s*([+-])\s*(\d+)\s*$")
 
 
 def _split_args(text):
@@ -55,20 +59,70 @@ def _split_args(text):
     return parts
 
 
+def _is_arithmetic(expr):
+    """True when the expression has a top-level arithmetic operator.  A
+    colon at the top level marks a range instead, which is not shifted
+    here."""
+    depth = 0
+    for i, ch in enumerate(expr):
+        if ch in "([":
+            depth += 1
+        elif ch in ")]":
+            depth -= 1
+        elif depth == 0:
+            if ch == ":":
+                return False
+            if ch in "+-*/" and i > 0:
+                return True
+    return False
+
+
+def _strip_outer_parens(expr):
+    if not (expr.startswith("(") and expr.endswith(")")):
+        return expr
+    depth = 0
+    for ch in expr[1:-1]:
+        if ch == "(":
+            depth += 1
+        elif ch == ")":
+            depth -= 1
+            if depth < 0:
+                return expr
+    return expr[1:-1] if depth == 0 else expr
+
+
+def _fold_constant_shift(expr, direction):
+    """Fold the +-1 shift into a trailing integer constant term of an
+    arithmetic expression: ``i + 1`` -> ``i`` forward and ``i - 1`` ->
+    ``i`` reverse.  Returns the folded expression, or None when there is
+    no trailing constant term to fold."""
+    match = _TRAILING_CONSTANT.fullmatch(expr)
+    if match is None:
+        return None
+    lhs, sign, literal = match.group(1), match.group(2), int(match.group(3))
+    if sign == "+":
+        new_literal = literal - 1 if direction == FORWARD else literal + 1
+    else:
+        new_literal = literal + 1 if direction == FORWARD else literal - 1
+    if new_literal == 0:
+        return lhs
+    return "%s %s %d" % (lhs, sign, abs(new_literal))
+
+
 def shift_index(expr, direction):
     """Shift an index expression between MATLAB and Python indexing.
 
     Args:
         expr: The index expression as a string -- a literal ("5"), a
             single variable ("i"), an indexed access ("x(i)", "x[i]"), or
-            a computed expression ("i + 1").
+            an arithmetic expression ("i + 1").
         direction: FORWARD ("forward") shifts MATLAB -> Python (subtract
             one, parentheses to brackets); REVERSE ("reverse") shifts
             Python -> MATLAB (add one, brackets to parentheses).
 
     Returns:
-        The shifted expression as a string.  Single-variable indices and
-        computed expressions are returned unchanged.
+        The shifted expression as a string.  Single-variable indices,
+        colon-ranges and end-keywords are returned unchanged.
 
     Raises:
         ValueError: when ``direction`` is neither 'forward' nor 'reverse'.
@@ -91,4 +145,11 @@ def shift_index(expr, direction):
         if direction == FORWARD:
             return "%s[%s]" % (name, shifted)
         return "%s(%s)" % (name, shifted)
+    stripped = _strip_outer_parens(expr)
+    if _is_arithmetic(stripped):
+        folded = _fold_constant_shift(stripped, direction)
+        if folded is not None:
+            return folded
+        op = "- 1" if direction == FORWARD else "+ 1"
+        return "(%s) %s" % (stripped, op)
     return expr
