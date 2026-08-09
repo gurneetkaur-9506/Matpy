@@ -39,19 +39,60 @@ class TestShiftIndexReverse(unittest.TestCase):
 
 
 class TestShiftIndexPassThrough(unittest.TestCase):
-    """Ranges and end-keywords are left to the richer indexing rules."""
+    """End-keywords and the bare colon are left to the richer indexing
+    rules."""
 
     def test_identifier_unchanged(self):
         self.assertEqual(shift_index("i", FORWARD), "i")
         self.assertEqual(shift_index("i", REVERSE), "i")
 
-    def test_colon_range_unchanged(self):
-        self.assertEqual(shift_index("1:5", FORWARD), "1:5")
-        self.assertEqual(shift_index("i:j", REVERSE), "i:j")
+    def test_bare_colon_unchanged(self):
+        self.assertEqual(shift_index(":", FORWARD), ":")
+        self.assertEqual(shift_index(":", REVERSE), ":")
 
     def test_end_keyword_unchanged(self):
         self.assertEqual(shift_index("end", FORWARD), "end")
         self.assertEqual(shift_index("end", REVERSE), "end")
+
+
+class TestShiftIndexSlice(unittest.TestCase):
+    """A slice/range shifts its start bound by the direction offset while
+    its stop bound stays unchanged: MATLAB's inclusive stop maps onto
+    Python's exclusive stop with no offset."""
+
+    def test_forward_literal_bounds(self):
+        self.assertEqual(shift_index("2:5", FORWARD), "1:5")
+        self.assertEqual(shift_index("1:3", FORWARD), "0:3")
+
+    def test_reverse_literal_bounds(self):
+        self.assertEqual(shift_index("2:5", REVERSE), "3:5")
+        self.assertEqual(shift_index("0:3", REVERSE), "1:3")
+
+    def test_forward_slice_in_indexed_access(self):
+        self.assertEqual(shift_index("x(2:5)", FORWARD), "x[1:5]")
+        self.assertEqual(shift_index("x(1:3)", FORWARD), "x[0:3]")
+
+    def test_reverse_slice_in_indexed_access(self):
+        self.assertEqual(shift_index("x[2:5]", REVERSE), "x(3:5)")
+        self.assertEqual(shift_index("x[0:3]", REVERSE), "x(1:3)")
+
+    def test_variable_bounds_unchanged(self):
+        self.assertEqual(shift_index("i:j", FORWARD), "i:j")
+        self.assertEqual(shift_index("i:j", REVERSE), "i:j")
+
+    def test_two_dimension_with_slice(self):
+        self.assertEqual(shift_index("A(1:2, :)", FORWARD), "A[0:2, :]")
+        self.assertEqual(shift_index("A[1:2, :]", REVERSE), "A(2:2, :)")
+
+    def test_arithmetic_start_bound_folds(self):
+        self.assertEqual(shift_index("x(i+1:j)", FORWARD), "x[i:j]")
+
+    def test_open_ended_slice(self):
+        self.assertEqual(shift_index("2:", FORWARD), "1:")
+        self.assertEqual(shift_index(":5", FORWARD), ":5")
+
+    def test_end_as_stop_unchanged(self):
+        self.assertEqual(shift_index("2:end", FORWARD), "1:end")
 
 
 class TestShiftIndexArithmetic(unittest.TestCase):

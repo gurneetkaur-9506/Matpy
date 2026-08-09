@@ -20,10 +20,14 @@ The primitive recognizes four forms of index:
 - an arithmetic index expression such as ``i + 1``, shifted by folding
   the offset into its trailing constant term (i + 1 -> i forward,
   i - 1 -> i reverse); an expression without a foldable constant is
-  wrapped instead (2*k -> (2*k) - 1 forward).
+  wrapped instead (2*k -> (2*k) - 1 forward);
+- a slice/range such as ``2:5``, whose start bound is shifted by the
+  direction offset while its stop bound stays unchanged (2:5 -> 1:5
+  forward, 2:5 -> 3:5 reverse) -- MATLAB's inclusive stop maps onto
+  Python's exclusive stop with no offset, so only the start moves.
 
-Colon-ranges and end-keywords pass through unchanged; their adjustment
-belongs to the richer indexing rules that call this primitive.
+End-keywords pass through unchanged; their adjustment belongs to the
+richer indexing rules that call this primitive.
 """
 
 import re
@@ -61,8 +65,8 @@ def _split_args(text):
 
 def _is_arithmetic(expr):
     """True when the expression has a top-level arithmetic operator.  A
-    colon at the top level marks a range instead, which is not shifted
-    here."""
+    colon at the top level marks a range instead, which is handled by the
+    slice rules."""
     depth = 0
     for i, ch in enumerate(expr):
         if ch in "([":
@@ -75,6 +79,20 @@ def _is_arithmetic(expr):
             if ch in "+-*/" and i > 0:
                 return True
     return False
+
+
+def _split_range(expr):
+    """Split a colon range ``a:b`` at the top level into ``(start, stop)``,
+    or return None when the expression is not a range."""
+    depth = 0
+    for i, ch in enumerate(expr):
+        if ch in "([":
+            depth += 1
+        elif ch in ")]":
+            depth -= 1
+        elif ch == ":" and depth == 0:
+            return expr[:i], expr[i + 1:]
+    return None
 
 
 def _strip_outer_parens(expr):
@@ -145,6 +163,11 @@ def shift_index(expr, direction):
         if direction == FORWARD:
             return "%s[%s]" % (name, shifted)
         return "%s(%s)" % (name, shifted)
+    range_parts = _split_range(expr)
+    if range_parts is not None:
+        start, stop = range_parts
+        shifted_start = shift_index(start, direction)
+        return "%s:%s" % (shifted_start, stop)
     stripped = _strip_outer_parens(expr)
     if _is_arithmetic(stripped):
         folded = _fold_constant_shift(stripped, direction)
