@@ -235,5 +235,16 @@ class TestTranslateWithRulebookReverse(unittest.TestCase):
         )
 
 
+    def test_plt_legend_maps_to_matlab_legend(self):
+        self.assertEqual(
+            self._translate_expr_stmt("plt.legend(['first', 'second'])"),
+            "legend(['first', 'second']);",
+        )
+        self.assertEqual(
+            self._translate_expr_stmt("plt.legend()"),
+            "legend();",
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
