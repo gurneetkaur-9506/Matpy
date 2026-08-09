@@ -381,22 +381,32 @@ _PLOT_KWARGS_REVERSE = {
 
 _KWARG_REVERSE = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)\s*=(?!\=)(.*)$")
 
+# python call target (the PLOT_COMMANDS 'func' value) -> MATLAB command name.
+_PLOT_COMMANDS_REVERSE = {
+    spec["func"]: name for name, spec in PLOT_COMMANDS.items() if "func" in spec
+}
+
+_PLOT_DOTTED_CALL = re.compile(
+    r"([A-Za-z_][A-Za-z0-9_]*)\.([A-Za-z_][A-Za-z0-9_]*)\s*\((.*)\)", re.DOTALL
+)
+
 
 def _translate_plot_command_reverse(expr):
-    """Translate a matplotlib plot command such as ``plt.subplot(2, 2, 1)``
-    or ``plt.plot(x, y)`` back to its MATLAB form.  Only the PLOT_COMMANDS
-    entries that map 1:1 onto a plain call -- no flag words, limit vectors
-    or no-op commands -- are handled.  Keyword arguments such as
-    ``linewidth=2`` become MATLAB name-value pairs (``'LineWidth', 2``).
-    The trailing semicolon suppresses display of the returned handle,
-    matching typical MATLAB script style."""
-    match = re.fullmatch(r"plt\.([A-Za-z_][A-Za-z0-9_]*)\s*\((.*)\)", expr, re.DOTALL)
+    """Translate a matplotlib plot command such as ``plt.subplot(2, 2, 1)``,
+    ``plt.plot(x, y)`` or ``ax.set_zlabel('z')`` back to its MATLAB form.
+    Only the PLOT_COMMANDS entries that map 1:1 onto a plain call -- no
+    flag words, limit vectors or no-op commands -- are handled.  Keyword
+    arguments such as ``linewidth=2`` become MATLAB name-value pairs
+    (``'LineWidth', 2``).  The trailing semicolon suppresses display of the
+    returned handle, matching typical MATLAB script style."""
+    match = _PLOT_DOTTED_CALL.fullmatch(expr)
     if match is None:
         return expr
-    name, argtext = match.group(1), match.group(2)
-    spec = PLOT_COMMANDS.get(name)
-    if spec is None or spec.get("func") != "plt.%s" % name:
+    obj, method, argtext = match.group(1), match.group(2), match.group(3)
+    name = _PLOT_COMMANDS_REVERSE.get("%s.%s" % (obj, method))
+    if name is None:
         return expr
+    spec = PLOT_COMMANDS[name]
     if "vector" in spec or "flags" in spec or "spread" in spec or "noop" in spec:
         return expr
     translated = []

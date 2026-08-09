@@ -211,5 +211,16 @@ class TestTranslateWithRulebookReverse(unittest.TestCase):
         )
 
 
+    def test_ax_set_zlabel_maps_to_matlab_zlabel(self):
+        self.assertEqual(
+            self._translate_expr_stmt("ax.set_zlabel('z')"),
+            "zlabel('z');",
+        )
+        self.assertEqual(
+            self._translate_expr_stmt('ax.set_zlabel("Range (m)")'),
+            'zlabel("Range (m)");',
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
