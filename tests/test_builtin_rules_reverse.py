@@ -53,6 +53,19 @@ class TestApplyBuiltinRuleReverse(unittest.TestCase):
     def test_unknown_call_passthrough(self):
         self.assertEqual(apply_builtin_rule_reverse("np.linalg.det(a)"), "np.linalg.det(a)")
         self.assertEqual(apply_builtin_rule_reverse("myfunc(x)"), "myfunc(x)")
+
+    def test_operator_expression_not_misparsed_as_single_call(self):
+        # A greedy 'name(.*)' regex reads 'np.sin(theta) - np.sin(theta0)'
+        # as the call 'np.sin(theta) - np.sin(theta0)'. The balanced splitter
+        # must refuse it so operators are handled by the operator rules.
+        self.assertEqual(
+            apply_builtin_rule_reverse("np.sin(theta) - np.sin(theta0)"),
+            "np.sin(theta) - np.sin(theta0)",
+        )
+        self.assertEqual(
+            apply_builtin_rule_reverse("np.abs(a) + np.cos(b)"),
+            "np.abs(a) + np.cos(b)",
+        )
         self.assertEqual(apply_builtin_rule_reverse("a + b"), "a + b")
 
     def test_round_trip_with_forward(self):

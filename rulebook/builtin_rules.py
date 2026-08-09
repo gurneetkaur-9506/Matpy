@@ -49,6 +49,34 @@ def _size_dim(dim):
     return "(%s - 1)" % dim
 
 
+def _split_reverse_call(expr):
+    """Split ``expr`` into ``(name, inner)`` only when it is exactly one
+    well-formed call: a name (possibly dotted, e.g. ``np.sin``) followed by a
+    balanced parenthesized argument list that ends at the string's end.
+
+    A greedy regex like ``name(.*)`` is not enough here: it would read
+    ``np.sin(theta) - np.sin(theta0)`` as the single call
+    ``np.sin(theta) - np.sin(theta0)``.  Requiring balance means such an
+    expression (with a leftover ``- np.sin(theta0)`` after the first closing
+    paren) is not treated as one call.
+    """
+    match = re.match(r"\s*([A-Za-z_][A-Za-z0-9_.]*)\s*\(", expr)
+    if not match:
+        return None
+    start = expr.find("(", match.start())
+    depth = 0
+    for i in range(start, len(expr)):
+        if expr[i] == "(":
+            depth += 1
+        elif expr[i] == ")":
+            depth -= 1
+            if depth == 0:
+                if expr[i + 1:].strip() == "":
+                    return match.group(1), expr[start + 1:i]
+                return None
+    return None
+
+
 # Reverse mapping derived from the forward rules: every built-in whose
 # python target is a plain 'np.<name>' call can be mirrored back to its
 # MATLAB name. The 'size' rule (-> '.shape') and attribute access are not
@@ -69,14 +97,14 @@ def _expand_tuple_arg(arg):
 
 def apply_builtin_rule_reverse(call):
     call = call.strip()
-    match = re.fullmatch(r"([A-Za-z_][A-Za-z0-9_.]*)\s*\((.*)\)", call)
+    match = _split_reverse_call(call)
     if not match:
         return call
-    name = match.group(1)
+    name, inner = match
     if name not in _REVERSE_BUILTIN_MAP:
         return call
 
-    inner = match.group(2).strip()
+    inner = inner.strip()
     args = _split_args(inner) if inner else []
     args = [apply_builtin_rule_reverse(a) for a in args]
 

@@ -96,6 +96,41 @@ class TestApplyOperatorRuleReverse(unittest.TestCase):
     def test_power_not_misparsed_as_elementwise_multiply(self):
         self.assertEqual(apply_operator_rule_reverse("a ** b"), "a ** b")
 
+    def test_builtin_calls_inside_operands_reversed(self):
+        self.assertEqual(
+            apply_operator_rule_reverse("k * d * (np.sin(theta) - np.sin(theta0))"),
+            "k .* d .* (sin(theta) - sin(theta0))",
+        )
+        self.assertEqual(
+            apply_operator_rule_reverse("np.sin(theta) - np.sin(theta0)"),
+            "sin(theta) - sin(theta0)",
+        )
+        self.assertEqual(
+            apply_operator_rule_reverse("np.exp(x) * np.log(y)"),
+            "exp(x) .* log(y)",
+        )
+
+    def test_parenthesized_operand_builtin_no_leak(self):
+        self.assertEqual(
+            apply_operator_rule_reverse("(np.abs(a) - np.cos(b)) * c"),
+            "(abs(a) - cos(b)) .* c",
+        )
+        result = apply_operator_rule_reverse(
+            "k * d * (np.sin(theta) - np.sin(theta0))"
+        )
+        self.assertNotIn("np.", result)
+
+    def test_nested_divide_in_parentheses(self):
+        self.assertEqual(
+            apply_operator_rule_reverse("a * (b / c)"), "a .* (b ./ c)"
+        )
+
+    def test_additive_group_multiply(self):
+        self.assertEqual(
+            apply_operator_rule_reverse("(a + b) * (c - d)"),
+            "(a + b) .* (c - d)",
+        )
+
     def test_round_trip_simple_operators(self):
         self.assertEqual(
             apply_operator_rule_reverse(apply_operator_rule("a * b")), "a * b"

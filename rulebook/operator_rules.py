@@ -1,5 +1,7 @@
 import re
 
+from .builtin_rules import _split_reverse_call, apply_builtin_rule_reverse
+
 OPERATOR_RULES = {
     "matrix_multiply": {"matlab": "*", "python": "@"},
     "elementwise_multiply": {"matlab": ".*", "python": "*"},
@@ -362,6 +364,27 @@ def _find_last_reverse_operator(expr):
     return mult if mult is not None else (None, None)
 
 
+def _reverse_operand(expr):
+    """Translate a single operand inside a larger expression.
+
+    Operands can be builtin calls (``np.sin(theta)``), parenthesized
+    sub-expressions (``(a - b)``), or further operator expressions.  Each
+    kind must be handled so no Python-only name leaks into the result:
+    outer parentheses are unwrapped (and re-wrapped), builtin calls are
+    mirrored back to MATLAB, and everything else is recursed through the
+    operator rules.
+    """
+    expr = expr.strip()
+    if expr.startswith("(") and expr.endswith(")"):
+        inner = _reverse_operand(expr[1:-1])
+        return "(%s)" % inner
+    if _split_reverse_call(expr):
+        reversed_call = apply_builtin_rule_reverse(expr)
+        if reversed_call != expr:
+            return reversed_call
+    return apply_operator_rule_reverse(expr)
+
+
 def apply_operator_rule_reverse(expr):
     expr = expr.strip()
 
@@ -375,8 +398,8 @@ def apply_operator_rule_reverse(expr):
         right = match.group(1)
         left = match.group(2)
         return "%s / %s" % (
-            apply_operator_rule_reverse(left),
-            apply_operator_rule_reverse(right),
+            _reverse_operand(left),
+            _reverse_operand(right),
         )
 
     idx, op = _find_last_reverse_operator(expr)
@@ -384,8 +407,8 @@ def apply_operator_rule_reverse(expr):
         return expr
 
     op_len = 2 if op == "//" else 1
-    left = apply_operator_rule_reverse(expr[:idx])
-    right = apply_operator_rule_reverse(expr[idx + op_len:])
+    left = _reverse_operand(expr[:idx])
+    right = _reverse_operand(expr[idx + op_len:])
 
     if op == "//":
         # Python floor division: floor(a / b) for scalars, floor(a ./ b) for
