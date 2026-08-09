@@ -19,6 +19,12 @@ from .operator_rules import (
     apply_transpose_rule,
     is_scalar_like,
 )
+from .scan_rules import (
+    translate_feof_loop,
+    translate_feof_statement,
+    translate_fopen,
+    translate_fscanf,
+)
 
 UNRESOLVED = "UNRESOLVED"
 
@@ -384,6 +390,11 @@ def _translate_expr(expr, scalars=None, declared=None):
             if converted is not None:
                 return converted
             return UNRESOLVED
+        if name == "fclose":
+            args = _split_top_level(argtext, ",")
+            if len(args) == 1 and re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", args[0].strip()):
+                return "%s.close()" % args[0].strip()
+            return UNRESOLVED
         if name in _NUMPY_CALLS:
             translated = [
                 _translate_expr(a, scalars, declared)
@@ -566,14 +577,23 @@ def _loop_source(loop):
     return "%s %s\n%s\nend" % (loop.type, loop.header, body)
 
 
-def _translate_loop(stmt, scalars=None, declared=None):
+def _translate_loop(stmt, scalars=None, declared=None, io=None):
+    feof_line = translate_feof_loop(stmt.header, stmt.statements, io)
+    if feof_line is not None:
+        return {
+            "kind": "loop",
+            "source": _loop_source(stmt),
+            "python": feof_line,
+            "comment": "# MATLAB: %s; -> Python: %s" % (stmt.header, feof_line),
+            "body": [],
+        }
     source = _loop_source(stmt)
     header = "%s %s" % (stmt.type, stmt.header)
     body_declared = set(declared) if declared else set()
     body_declared.add(_loop_variable(stmt))
     body = []
     for s in stmt.statements:
-        body.append(_translate_statement(s, scalars, body_declared))
+        body.append(_translate_statement(s, scalars, body_declared, io))
         target = _declare_target(s.text) if hasattr(s, "kind") else None
         if target:
             body_declared.add(target)
@@ -622,9 +642,9 @@ def _record_scalar(stmt, scalars):
         scalars.add(target.strip())
 
 
-def _translate_statement(stmt, scalars=None, declared=None):
+def _translate_statement(stmt, scalars=None, declared=None, io=None):
     if not hasattr(stmt, "kind"):
-        return _translate_loop(stmt, scalars, declared)
+        return _translate_loop(stmt, scalars, declared, io)
     if stmt.kind == "command":
         if stmt.text in _COMMANDS:
             return {
@@ -643,10 +663,40 @@ def _translate_statement(stmt, scalars=None, declared=None):
             }
         return {"kind": stmt.kind, "source": stmt.text, "python": UNRESOLVED}
 
+    if stmt.kind == "while_statement":
+        feof_line = translate_feof_statement(stmt.text, io)
+        if feof_line is not None:
+            return {
+                "kind": stmt.kind,
+                "source": stmt.text,
+                "python": feof_line,
+                "comment": _comment_for(stmt, feof_line),
+            }
+        return {"kind": stmt.kind, "source": stmt.text, "python": UNRESOLVED}
+
     if stmt.kind == "assignment":
         target, value = _split_assignment(stmt.text)
         if value is None:
             return {"kind": stmt.kind, "source": stmt.text, "python": UNRESOLVED}
+        fopen_result = translate_fopen(target, value)
+        if fopen_result is not None:
+            python, record = fopen_result
+            if io is not None:
+                io[target] = record
+            return {
+                "kind": stmt.kind,
+                "source": stmt.text,
+                "python": python,
+                "comment": _comment_for(stmt, python),
+            }
+        fscanf_line = translate_fscanf(target, value, io)
+        if fscanf_line is not None:
+            return {
+                "kind": stmt.kind,
+                "source": stmt.text,
+                "python": fscanf_line,
+                "comment": _comment_for(stmt, fscanf_line),
+            }
         if target.startswith("[") and target.endswith("]"):
             lines = translate_multi_output_assignment(
                 target, value, lambda a: _translate_expr(a, scalars, declared)
@@ -876,11 +926,12 @@ def assert_block_invariant(result):
 def _translate_function(func):
     declared = set(func.parameters)
     scalars = set()
+    io = {}
     translated = []
     for stmt in func.statements:
         if _is_loop(stmt):
             translated.extend(_preallocations_for_loop(stmt, declared))
-        translated.append(_translate_statement(stmt, scalars, declared))
+        translated.append(_translate_statement(stmt, scalars, declared, io))
         _record_scalar(stmt, scalars)
         target = _declare_target(stmt.text) if hasattr(stmt, "kind") else None
         if target:
@@ -899,8 +950,9 @@ def translate_with_rulebook(structure):
         result["functions"].append(_translate_function(func))
     scalars = set()
     declared = set()
+    io = {}
     for stmt in structure.statements:
-        result["statements"].append(_translate_statement(stmt, scalars, declared))
+        result["statements"].append(_translate_statement(stmt, scalars, declared, io))
         _record_scalar(stmt, scalars)
         target = _declare_target(stmt.text) if hasattr(stmt, "kind") else None
         if target:
