@@ -80,6 +80,7 @@ PLOT_COMMANDS = {
     "xlim": {"func": "plt.xlim", "vector": True},
     "ylabel": {"func": "plt.ylabel"},
     "ylim": {"func": "plt.ylim", "vector": True},
+    "zlabel": {"func": "ax.set_zlabel"},
 }
 
 # MATLAB functions that map 1:1 onto a numpy call but whose arguments need

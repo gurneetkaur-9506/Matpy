@@ -683,5 +683,24 @@ class TestSurfRule(unittest.TestCase):
         )
 
 
+class TestZlabelRule(unittest.TestCase):
+    def _translate(self, text):
+        structure = Structure(statements=[Statement("function_call", text)])
+        return translate_with_rulebook(structure)["statements"][0]["python"]
+
+    def test_zlabel_maps_to_ax_set_zlabel(self):
+        self.assertEqual(
+            self._translate("zlabel('Z axis (m)')"), "ax.set_zlabel('Z axis (m)')"
+        )
+
+    def test_zlabel_with_identifier_arg(self):
+        self.assertEqual(self._translate("zlabel(zname)"), "ax.set_zlabel(zname)")
+
+    def test_zlabel_is_never_index_shifted(self):
+        self.assertEqual(
+            self._translate("zlabel('Z axis (m)')"), "ax.set_zlabel('Z axis (m)')"
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
