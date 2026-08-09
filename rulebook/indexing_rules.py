@@ -1,5 +1,7 @@
 import re
 
+from .index_shift import FORWARD, shift_index
+
 INDEXING_RULES = {
     "1_based_offset": 1,
     "0_based_offset": 0,
@@ -76,7 +78,7 @@ def _convert_range_part(part, is_start):
         return ""
     patterns = INDEXING_RULES["patterns"]
     if re.fullmatch(patterns["integer"], part):
-        return str(int(part) - INDEXING_RULES["1_based_offset"]) if is_start else part
+        return shift_index(part, FORWARD) if is_start else part
     if part == INDEXING_RULES["end_keyword"]:
         return ""
     match = re.fullmatch(patterns["end_minus_int"], part)
@@ -86,11 +88,18 @@ def _convert_range_part(part, is_start):
 
 
 def apply_indexing_rule(expr):
+    """Translate a MATLAB index expression into Python.
+
+    Pure index shifting (integer literals, variable pass-through) is
+    delegated to the shared ``shift_index`` primitive; the MATLAB-only
+    conventions that primitive intentionally leaves alone -- end-keywords,
+    length() calls, range-stop collapsing -- are normalized here.
+    """
     expr = expr.strip()
     patterns = INDEXING_RULES["patterns"]
 
     if re.fullmatch(patterns["integer"], expr):
-        return str(int(expr) - INDEXING_RULES["1_based_offset"])
+        return shift_index(expr, FORWARD)
 
     if expr == INDEXING_RULES["colon"]:
         return INDEXING_RULES["colon"]
@@ -103,7 +112,7 @@ def apply_indexing_rule(expr):
         return "-%d" % (int(match.group(1)) + 1)
 
     if re.fullmatch(patterns["identifier"], expr):
-        return expr
+        return shift_index(expr, FORWARD)
 
     match = re.fullmatch(patterns["length_call"], expr)
     if match:
