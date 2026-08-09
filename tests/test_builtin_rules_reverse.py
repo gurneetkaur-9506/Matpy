@@ -78,5 +78,45 @@ class TestApplyBuiltinRuleReverse(unittest.TestCase):
             )
 
 
+class TestReverseIdenticalNamingBuiltins(unittest.TestCase):
+    """Functions whose numpy and MATLAB names are identical must reverse
+    translate with the name unchanged -- only the ``np.`` prefix is
+    dropped, the call is never renamed or rewritten."""
+
+    def test_round_passes_through(self):
+        self.assertEqual(apply_builtin_rule_reverse("np.round(x)"), "round(x)")
+        self.assertEqual(apply_builtin_rule_reverse("np.round(x, 2)"), "round(x, 2)")
+
+    def test_abs_passes_through(self):
+        self.assertEqual(apply_builtin_rule_reverse("np.abs(x)"), "abs(x)")
+        self.assertEqual(apply_builtin_rule_reverse("np.abs(-3)"), "abs(-3)")
+
+    def test_sqrt_passes_through(self):
+        self.assertEqual(apply_builtin_rule_reverse("np.sqrt(x)"), "sqrt(x)")
+        self.assertEqual(apply_builtin_rule_reverse("np.sqrt(a + b)"), "sqrt(a + b)")
+
+    def test_exp_passes_through(self):
+        self.assertEqual(apply_builtin_rule_reverse("np.exp(x)"), "exp(x)")
+        self.assertEqual(
+            apply_builtin_rule_reverse("np.exp(-j*2*pi*f)"), "exp(-j*2*pi*f)"
+        )
+
+    def test_log_passes_through(self):
+        self.assertEqual(apply_builtin_rule_reverse("np.log(x)"), "log(x)")
+        self.assertEqual(apply_builtin_rule_reverse("np.log(10)"), "log(10)")
+
+    def test_sin_passes_through(self):
+        self.assertEqual(apply_builtin_rule_reverse("np.sin(x)"), "sin(x)")
+        self.assertEqual(
+            apply_builtin_rule_reverse("np.sin(2*pi*f*t)"), "sin(2*pi*f*t)"
+        )
+
+    def test_cos_passes_through(self):
+        self.assertEqual(apply_builtin_rule_reverse("np.cos(theta)"), "cos(theta)")
+        self.assertEqual(
+            apply_builtin_rule_reverse("np.cos(2*pi*f*t)"), "cos(2*pi*f*t)"
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
