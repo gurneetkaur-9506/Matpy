@@ -374,16 +374,24 @@ def _translate_plot_command(text):
 
 def _translate_plot_command_reverse(expr):
     """Translate a matplotlib plot command such as ``plt.subplot(2, 2, 1)``
-    back to its MATLAB form.  The trailing semicolon suppresses display of
-    the returned axes handle, matching typical MATLAB script style."""
-    match = re.fullmatch(r"plt\.subplot\s*\((.*)\)", expr, re.DOTALL)
+    or ``plt.plot(x, y)`` back to its MATLAB form.  Only the PLOT_COMMANDS
+    entries that map 1:1 onto a plain call -- no flag words, limit vectors
+    or no-op commands -- are handled.  The trailing semicolon suppresses
+    display of the returned handle, matching typical MATLAB script style."""
+    match = re.fullmatch(r"plt\.([A-Za-z_][A-Za-z0-9_]*)\s*\((.*)\)", expr, re.DOTALL)
     if match is None:
         return expr
-    args = _split_top_level(match.group(1), ",")
+    name, argtext = match.group(1), match.group(2)
+    spec = PLOT_COMMANDS.get(name)
+    if spec is None or spec.get("func") != "plt.%s" % name:
+        return expr
+    if "vector" in spec or "flags" in spec or "spread" in spec or "noop" in spec:
+        return expr
+    args = _split_top_level(argtext, ",")
     translated = [_translate_expr_reverse(a) for a in args]
     if any(t == UNRESOLVED for t in translated):
         return UNRESOLVED
-    return "subplot(%s);" % ", ".join(translated)
+    return "%s(%s);" % (name, ", ".join(translated))
 
 
 def _translate_expr(expr, scalars=None, declared=None):

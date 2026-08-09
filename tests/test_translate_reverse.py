@@ -142,5 +142,16 @@ class TestTranslateWithRulebookReverse(unittest.TestCase):
         )
 
 
+    def test_plt_plot_maps_to_matlab_plot(self):
+        self.assertEqual(
+            self._translate_expr_stmt("plt.plot(x, y)"),
+            "plot(x, y);",
+        )
+        self.assertEqual(
+            self._translate_expr_stmt("plt.plot(t, x)"),
+            "plot(t, x);",
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
