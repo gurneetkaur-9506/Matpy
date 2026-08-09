@@ -650,29 +650,28 @@ def _record_scalar(stmt, scalars, renames=None):
 def _translate_statement(stmt, scalars=None, declared=None, io=None, renames=None, first_seen=None):
     if not hasattr(stmt, "kind"):
         return _translate_loop(stmt, scalars, declared, io, renames, first_seen)
-    text = rename_text(stmt.text, renames) if renames else stmt.text
     if stmt.kind == "command":
-        if text in _COMMANDS:
-            result = {
+        # Commands (clear, close all, grid on, ...) are bare MATLAB phrases
+        # that never reference variables, so reserved-word renaming does
+        # not apply to their text.
+        if stmt.text in _COMMANDS:
+            return {
                 "kind": stmt.kind,
                 "source": stmt.text,
-                "python": _COMMANDS[text],
-                "comment": _comment_for(stmt, _COMMANDS[text]),
+                "python": _COMMANDS[stmt.text],
+                "comment": _comment_for(stmt, _COMMANDS[stmt.text]),
             }
-        else:
-            plot_line = _translate_plot_command(text)
-            if plot_line is not None:
-                result = {
-                    "kind": stmt.kind,
-                    "source": stmt.text,
-                    "python": plot_line,
-                    "comment": _comment_for(stmt, plot_line),
-                }
-            else:
-                result = {"kind": stmt.kind, "source": stmt.text, "python": UNRESOLVED}
-        _attach_renames(result, stmt.text, renames, first_seen)
-        return result
+        plot_line = _translate_plot_command(stmt.text)
+        if plot_line is not None:
+            return {
+                "kind": stmt.kind,
+                "source": stmt.text,
+                "python": plot_line,
+                "comment": _comment_for(stmt, plot_line),
+            }
+        return {"kind": stmt.kind, "source": stmt.text, "python": UNRESOLVED}
 
+    text = rename_text(stmt.text, renames) if renames else stmt.text
     if stmt.kind == "while_statement":
         feof_line = translate_feof_statement(text, io)
         if feof_line is not None:
@@ -958,9 +957,14 @@ def assert_block_invariant(result):
 def _collect_names(statements, names):
     """Collect every variable identifier used across a list of reader
     statements into ``names``, recursing into loop bodies so reserved-word
-    collisions are detected for loop variables and nested bodies too."""
+    collisions are detected for loop variables and nested bodies too.
+    Command statements (``clear``, ``close all``, ``grid on``, ...) are
+    bare MATLAB phrases, never variable expressions, so their words are
+    not collected."""
     for stmt in statements:
         if hasattr(stmt, "kind"):
+            if stmt.kind == "command":
+                continue
             for _, _, ident in identifier_tokens(stmt.text):
                 names.add(ident)
         else:
