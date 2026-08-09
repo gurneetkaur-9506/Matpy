@@ -56,6 +56,7 @@ MULTI_OUTPUT_RULES = {
     },
     "size": {"kind": "shape"},
     "find": {"kind": "where"},
+    "meshgrid": {"kind": "meshgrid"},
 }
 
 # Reduction functions that map 1:1 onto numpy calls.  They are the single
@@ -262,6 +263,26 @@ def _translate_where(targets, args, translate_arg):
     return None
 
 
+def _translate_meshgrid(targets, args, translate_arg):
+    """Translate ``[FX, FY] = meshgrid(x, y)`` into a Python tuple
+    unpacking ``FX, FY = np.meshgrid(x, y)``.  Discarded targets (``~``)
+    keep their positional slot via indexing, so ``[~, FY]`` becomes
+    ``FY = np.meshgrid(x, y)[1]``."""
+    if not args or any(_is_string_literal(a) for a in args):
+        return None
+    translated = [translate_arg(a.strip()) for a in args]
+    if any(t == UNRESOLVED for t in translated):
+        return None
+    call = "np.meshgrid(%s)" % ", ".join(translated)
+    if any(t == "~" for t in targets):
+        lines = []
+        for i, t in enumerate(targets):
+            if t != "~":
+                lines.append("%s = %s[%d]" % (t, call, i))
+        return lines if lines else None
+    return ["%s = %s" % (", ".join(targets), call)]
+
+
 def translate_multi_output_assignment(target_text, value_expr, translate_arg):
     """Return the Python decomposition of ``[a, b] = func(...)`` as a list
     of lines, or ``None`` when the pattern is not recognized.
@@ -295,4 +316,6 @@ def translate_multi_output_assignment(target_text, value_expr, translate_arg):
         return _translate_shape(targets, args, translate_arg)
     if kind == "where":
         return _translate_where(targets, args, translate_arg)
+    if kind == "meshgrid":
+        return _translate_meshgrid(targets, args, translate_arg)
     return None

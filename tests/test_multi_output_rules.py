@@ -17,6 +17,7 @@ class TestRegistryContents(unittest.TestCase):
         self.assertIn("sort", MULTI_OUTPUT_RULES)
         self.assertIn("size", MULTI_OUTPUT_RULES)
         self.assertIn("find", MULTI_OUTPUT_RULES)
+        self.assertIn("meshgrid", MULTI_OUTPUT_RULES)
 
     def test_max_and_min_are_pair_rules(self):
         for name in ("max", "min"):
@@ -29,6 +30,9 @@ class TestRegistryContents(unittest.TestCase):
 
     def test_find_is_where_rule(self):
         self.assertEqual(MULTI_OUTPUT_RULES["find"]["kind"], "where")
+
+    def test_meshgrid_is_meshgrid_rule(self):
+        self.assertEqual(MULTI_OUTPUT_RULES["meshgrid"]["kind"], "meshgrid")
 
 
 class TestTranslateMultiOutput(unittest.TestCase):
@@ -66,6 +70,30 @@ class TestTranslateMultiOutput(unittest.TestCase):
         self.assertEqual(
             translate_multi_output_assignment("[r, c]", "find(B)", _translate("B")),
             ["r, c = np.where(B)"],
+        )
+
+    def test_meshgrid(self):
+        self.assertEqual(
+            translate_multi_output_assignment(
+                "[FX, FY]", "meshgrid(x, y)", _translate("x")
+            ),
+            ["FX, FY = np.meshgrid(x, y)"],
+        )
+
+    def test_meshgrid_three_outputs(self):
+        self.assertEqual(
+            translate_multi_output_assignment(
+                "[X, Y, Z]", "meshgrid(x, y, z)", _translate("x")
+            ),
+            ["X, Y, Z = np.meshgrid(x, y, z)"],
+        )
+
+    def test_meshgrid_discard_target(self):
+        self.assertEqual(
+            translate_multi_output_assignment(
+                "[~, FY]", "meshgrid(x, y)", _translate("x")
+            ),
+            ["FY = np.meshgrid(x, y)[1]"],
         )
 
     def test_single_target_max(self):
@@ -148,6 +176,12 @@ class TestTranslateStatementIntegration(unittest.TestCase):
 
     def test_find_statement(self):
         self.assertEqual(self._python("[r, c] = find(B)"), "r, c = np.where(B)")
+
+    def test_meshgrid_statement(self):
+        self.assertEqual(
+            self._python("[FX, FY] = meshgrid(x, y)"),
+            "FX, FY = np.meshgrid(x, y)",
+        )
 
     def test_nested_max_abs(self):
         self.assertEqual(
