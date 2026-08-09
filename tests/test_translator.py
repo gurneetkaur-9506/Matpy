@@ -649,5 +649,39 @@ class TestCaxisRule(unittest.TestCase):
         self.assertEqual(self._translate("caxis([a b])"), "plt.clim(a, b)")
 
 
+class TestSurfRule(unittest.TestCase):
+    def _translate(self, text):
+        structure = Structure(statements=[Statement("function_call", text)])
+        return translate_with_rulebook(structure)["statements"][0]["python"]
+
+    def test_surf_maps_to_plot_surface_with_3d_axes(self):
+        self.assertEqual(
+            self._translate("surf(X, Y, Z)"),
+            "fig = plt.figure()\n"
+            "ax = fig.add_subplot(projection='3d')\n"
+            "ax.plot_surface(X, Y, Z)",
+        )
+
+    def test_surf_extra_args_are_dropped(self):
+        self.assertEqual(
+            self._translate("surf(X, Y, Z, C)"),
+            "fig = plt.figure()\n"
+            "ax = fig.add_subplot(projection='3d')\n"
+            "ax.plot_surface(X, Y, Z)",
+        )
+
+    def test_surf_fewer_than_three_args_stays_unresolved(self):
+        self.assertEqual(self._translate("surf(X, Y)"), UNRESOLVED)
+        self.assertEqual(self._translate("surf(Z)"), UNRESOLVED)
+
+    def test_surf_is_never_index_shifted(self):
+        self.assertEqual(
+            self._translate("surf(X, Y, Z)"),
+            "fig = plt.figure()\n"
+            "ax = fig.add_subplot(projection='3d')\n"
+            "ax.plot_surface(X, Y, Z)",
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
