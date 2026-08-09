@@ -372,12 +372,23 @@ def _translate_plot_command(text):
     return "%s(%s)" % (spec["func"], call_args)
 
 
+# matplotlib keyword arguments whose value carries over to MATLAB as a
+# name-value pair (keyword name -> MATLAB property name).
+_PLOT_KWARGS_REVERSE = {
+    "linewidth": "LineWidth",
+}
+
+_KWARG_REVERSE = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)\s*=(?!\=)(.*)$")
+
+
 def _translate_plot_command_reverse(expr):
     """Translate a matplotlib plot command such as ``plt.subplot(2, 2, 1)``
     or ``plt.plot(x, y)`` back to its MATLAB form.  Only the PLOT_COMMANDS
     entries that map 1:1 onto a plain call -- no flag words, limit vectors
-    or no-op commands -- are handled.  The trailing semicolon suppresses
-    display of the returned handle, matching typical MATLAB script style."""
+    or no-op commands -- are handled.  Keyword arguments such as
+    ``linewidth=2`` become MATLAB name-value pairs (``'LineWidth', 2``).
+    The trailing semicolon suppresses display of the returned handle,
+    matching typical MATLAB script style."""
     match = re.fullmatch(r"plt\.([A-Za-z_][A-Za-z0-9_]*)\s*\((.*)\)", expr, re.DOTALL)
     if match is None:
         return expr
@@ -387,10 +398,25 @@ def _translate_plot_command_reverse(expr):
         return expr
     if "vector" in spec or "flags" in spec or "spread" in spec or "noop" in spec:
         return expr
-    args = _split_top_level(argtext, ",")
-    translated = [_translate_expr_reverse(a) for a in args]
-    if any(t == UNRESOLVED for t in translated):
-        return UNRESOLVED
+    translated = []
+    for a in _split_top_level(argtext, ","):
+        a = a.strip()
+        if not a:
+            continue
+        kwarg = _KWARG_REVERSE.fullmatch(a)
+        if kwarg is not None:
+            matlab_name = _PLOT_KWARGS_REVERSE.get(kwarg.group(1))
+            if matlab_name is None:
+                return UNRESOLVED
+            value = _translate_expr_reverse(kwarg.group(2))
+            if value == UNRESOLVED:
+                return UNRESOLVED
+            translated.append("'%s', %s" % (matlab_name, value))
+        else:
+            arg_py = _translate_expr_reverse(a)
+            if arg_py == UNRESOLVED:
+                return UNRESOLVED
+            translated.append(arg_py)
     return "%s(%s);" % (name, ", ".join(translated))
 
 

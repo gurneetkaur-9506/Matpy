@@ -153,5 +153,16 @@ class TestTranslateWithRulebookReverse(unittest.TestCase):
         )
 
 
+    def test_plt_plot_with_linewidth_kwarg(self):
+        self.assertEqual(
+            self._translate_expr_stmt("plt.plot(x, y, linewidth=2)"),
+            "plot(x, y, 'LineWidth', 2);",
+        )
+        self.assertEqual(
+            self._translate_expr_stmt("plt.plot(t, x, linewidth=1.5)"),
+            "plot(t, x, 'LineWidth', 1.5);",
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
