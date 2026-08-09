@@ -132,7 +132,8 @@ def _split_call(expr):
 
 
 def _split_targets(text):
-    """Split a bracketed target ``[a, b, ...]`` into plain identifiers."""
+    """Split a bracketed target ``[a, b, ...]`` into elements.  Each element
+    is a plain identifier or the MATLAB ``~`` discard placeholder."""
     match = _TARGET_RE.fullmatch(text)
     if not match:
         return None
@@ -140,7 +141,9 @@ def _split_targets(text):
     if not inner.strip():
         return None
     targets = [t.strip() for t in _split_top_level(inner, ",") if t.strip()]
-    if not targets or not all(_IDENTIFIER_RE.fullmatch(t) for t in targets):
+    if not targets:
+        return None
+    if any(t != "~" and not _IDENTIFIER_RE.fullmatch(t) for t in targets):
         return None
     return targets
 
@@ -211,10 +214,14 @@ def _translate_pair(targets, args, translate_arg, rule):
     else:
         return None
 
-    lines = ["%s = %s%s" % (targets[0], call, suffix)]
-    if len(targets) >= 2:
+    lines = []
+    if targets[0] != "~":
+        lines.append("%s = %s%s" % (targets[0], call, suffix))
+    if len(targets) >= 2 and targets[1] != "~":
         lines.append("%s = %s%s" % (targets[1], index_call, suffix))
     if len(targets) > 2:
+        return None
+    if not lines:
         return None
     return lines
 
@@ -225,6 +232,13 @@ def _translate_shape(targets, args, translate_arg):
     arg = translate_arg(args[0].strip())
     if arg == UNRESOLVED:
         return None
+    if any(t == "~" for t in targets):
+        lines = [
+            "%s = %s.shape[%d]" % (t, arg, i)
+            for i, t in enumerate(targets)
+            if t != "~"
+        ]
+        return lines if lines else None
     return ["%s = %s.shape" % (", ".join(targets), arg)]
 
 
@@ -235,6 +249,13 @@ def _translate_where(targets, args, translate_arg):
     if arg == UNRESOLVED:
         return None
     if len(targets) == 2:
+        if any(t == "~" for t in targets):
+            lines = []
+            if targets[0] != "~":
+                lines.append("%s = np.where(%s)[0]" % (targets[0], arg))
+            if targets[1] != "~":
+                lines.append("%s = np.where(%s)[1]" % (targets[1], arg))
+            return lines if lines else None
         return ["%s = np.where(%s)" % (", ".join(targets), arg)]
     if len(targets) == 1:
         return ["%s = np.where(%s)[0]" % (targets[0], arg)]

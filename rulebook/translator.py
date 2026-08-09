@@ -1,7 +1,8 @@
 import ast
+import keyword
 import re
 
-from reader.extract_structure import is_range, split_range
+from reader.extract_structure import split_range
 
 from .builtin_rules import BUILTIN_RULES, apply_builtin_rule, apply_builtin_rule_reverse
 from .complex_rules import apply_complex_rule
@@ -259,28 +260,21 @@ def _translate_range(parts, scalars=None, declared=None):
 
 
 def _translate_builtin_call(name, argtext, scalars=None, declared=None):
-    """Translate a builtin call, first resolving any nested call-like
-    arguments (user indexing or nested calls), any colon-range arguments,
-    and any postfix-transpose arguments with the full expression
-    translator, so a known builtin never swallows an unconverted ``name()``
-    indexing site, a range, or a transpose.  Range detection is the
-    Reader's context-independent check, so it applies to arguments in any
-    syntactic context."""
+    """Translate a builtin call, first resolving every argument with the
+    full expression translator so a known builtin never swallows an
+    unconverted element-wise operator (``.*``/``./``), a nested call, a
+    user ``name()`` indexing site, a range, or a transpose.  An argument
+    the full translator cannot resolve is passed through verbatim rather
+    than failing the whole call."""
     args = _split_top_level(argtext, ",") if argtext.strip() else []
     translated = []
     for a in args:
         stripped = a.strip()
-        if (
-            re.match(r"[A-Za-z_][A-Za-z0-9_]*\s*\(", stripped)
-            or is_range(stripped)
-            or _split_transpose(stripped) is not None
-        ):
-            inner = _translate_expr(stripped, scalars, declared)
-            if inner == UNRESOLVED:
-                return UNRESOLVED
-            translated.append(inner)
-        else:
+        inner = _translate_expr(stripped, scalars, declared)
+        if inner == UNRESOLVED:
             translated.append(a)
+        else:
+            translated.append(inner)
     rebuilt = "%s(%s)" % (name, ", ".join(translated))
     return apply_builtin_rule(rebuilt)
 
@@ -709,6 +703,8 @@ def _translate_statement(stmt, scalars=None, declared=None, io=None):
                     "python": python,
                     "comment": _comment_for(stmt, python),
                 }
+            if "~" in target:
+                return {"kind": stmt.kind, "source": stmt.text, "python": UNRESOLVED}
         value_py = _translate_expr(value, scalars, declared)
         if value_py == UNRESOLVED:
             return {"kind": stmt.kind, "source": stmt.text, "python": UNRESOLVED}
@@ -923,10 +919,32 @@ def assert_block_invariant(result):
         )
 
 
+def _apply_identifier_rename(statements, rename):
+    """Rewrite translated Python so any MATLAB identifier that collides with
+    a Python keyword (e.g. ``lambda``) is renamed consistently across the
+    function signature, body, and return lines.  The walk is recursive so
+    nested loop bodies are covered too."""
+    if not rename:
+        return
+    patterns = {name: re.compile(r"\b%s\b" % name) for name in rename}
+    for stmt in statements:
+        py = stmt.get("python")
+        if isinstance(py, str) and py != UNRESOLVED:
+            for name, pattern in patterns.items():
+                stmt["python"] = pattern.sub(rename[name], py)
+                py = stmt["python"]
+        body = stmt.get("body")
+        if body:
+            _apply_identifier_rename(body, rename)
+
+
 def _translate_function(func):
     declared = set(func.parameters)
     scalars = set()
     io = {}
+    rename = {
+        p: p + "_" for p in func.parameters if p in keyword.kwlist
+    }
     translated = []
     for stmt in func.statements:
         if _is_loop(stmt):
@@ -936,10 +954,11 @@ def _translate_function(func):
         target = _declare_target(stmt.text) if hasattr(stmt, "kind") else None
         if target:
             declared.add(target)
+    _apply_identifier_rename(translated, rename)
     return {
-        "name": func.name,
-        "parameters": list(func.parameters),
-        "outputs": list(func.outputs),
+        "name": rename.get(func.name, func.name),
+        "parameters": [rename.get(p, p) for p in func.parameters],
+        "outputs": [rename.get(o, o) for o in func.outputs],
         "statements": translated,
     }
 

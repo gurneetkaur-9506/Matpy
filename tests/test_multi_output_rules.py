@@ -224,6 +224,44 @@ class TestNestedReductions(unittest.TestCase):
         )
 
 
+class TestDiscardTargets(unittest.TestCase):
+    """MATLAB's ``~`` output-discard placeholder must decompose without
+    emitting ``~`` into the Python target list (it is not valid Python)."""
+
+    def _python(self, text):
+        return _translate_statement(Statement("assignment", text))["python"]
+
+    def test_discard_value_keeps_index(self):
+        self.assertEqual(
+            self._python("[~, az] = max(max(abs(AF)))"),
+            "az = np.argmax(np.max(np.abs(AF)))",
+        )
+
+    def test_discard_value_keeps_index_nested_transpose(self):
+        self.assertEqual(
+            self._python("[~, el] = max(max(abs(AF')))"),
+            "el = np.argmax(np.max(np.abs(np.conj(AF).T)))",
+        )
+
+    def test_discard_value_discard_index_is_unresolved(self):
+        self.assertEqual(
+            self._python("[~, ~] = max(X)"),
+            "UNRESOLVED",
+        )
+
+    def test_discard_in_size_shape(self):
+        self.assertEqual(
+            self._python("[~, nc] = size(A)"),
+            "nc = A.shape[1]",
+        )
+
+    def test_discard_in_find_where(self):
+        self.assertEqual(
+            self._python("[~, c] = find(B)"),
+            "c = np.where(B)[1]",
+        )
+
+
 
 class TestMultiOutputFilePipeline(unittest.TestCase):
     def _translate_file(self, source):

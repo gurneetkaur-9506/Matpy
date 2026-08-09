@@ -1,6 +1,7 @@
 import unittest
 from unittest import mock
 
+import ast
 import numpy as np
 
 from checker import build_translation_report
@@ -307,27 +308,18 @@ class TestCheckerVerdicts(unittest.TestCase):
 
 
 class TestReportWithBeamform(unittest.TestCase):
-    def test_beamform_basic_forward_flags_syntax_errors(self):
+    def test_beamform_basic_forward_flags_no_syntax_errors(self):
         result = translate_file(BEAMFORM_MATLAB)
         report = build_translation_report(result)
         issues = [e["issue"] for e in report]
-        self.assertEqual(
-            issues, ["syntax error", "syntax error", "syntax error", "inconclusive_no_matlab"]
-        )
-        syntax = [e for e in report if e["issue"] == "syntax error"]
-        sources = {e["source"] for e in syntax}
-        self.assertEqual(
-            sources,
-            {
-                "k = 2 * pi / lambda",
-                "af = af + exp(1i * (n - 1) * phase)",
-                "for n = 1:N\n        af = af + exp(1i * (n - 1) * phase);\n    end",
-            },
-        )
-        for entry in syntax:
-            self.assertEqual(entry["stage"], "rulebook")
-            self.assertNotIn("Traceback", entry["reason"])
-            self.assertNotIn("raise ", entry["reason"])
+        self.assertEqual(issues, ["inconclusive_no_matlab"])
+        self.assertNotIn("syntax error", issues)
+
+    def test_beamform_basic_output_parses(self):
+        result = translate_file(BEAMFORM_MATLAB)
+        ast.parse(result["python"])
+        self.assertIn("lambda_", result["python"])
+        self.assertNotIn("lambda", result["python"].replace("lambda_", ""))
 
     @mock.patch(
         "assistant.draft_translation._call_ollama",

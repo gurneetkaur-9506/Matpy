@@ -70,7 +70,8 @@ class TestPlotBuiltins(unittest.TestCase):
     def test_scalar_multiply_in_signal_mix_stays_plain_star(self):
         translations = [s["python"] for s in self.result["statements"]]
         self.assertIn(
-            "x = np.sin(2*pi*f1*t) + 0.5 * np.sin(2*pi*f2*t)", translations
+            "x = np.sin(2 * pi * f1 * t) + 0.5 * np.sin(2 * pi * f2 * t)",
+            translations,
         )
 
 
@@ -199,7 +200,7 @@ class TestLoopHandling(unittest.TestCase):
         self.assertEqual(loop[0]["python"], "for n in range(N):")
         self.assertEqual(
             [b["python"] for b in loop[0]["body"]],
-            ["af = af + np.exp(1i * (n - 1) * phase)"],
+            ["af = af + np.exp(1j * (n - 1) @ phase)"],
         )
 
     def test_loop_with_unresolved_body_marked_unresolved(self):
@@ -209,6 +210,53 @@ class TestLoopHandling(unittest.TestCase):
             statements=[Statement("command", "fprintf(1, '%d', n)")],
         )
         self.assertEqual(_translate_loop(loop)["python"], UNRESOLVED)
+
+
+class TestBuiltinArgTranslation(unittest.TestCase):
+    """Arguments inside a builtin call go through the full expression
+    translator, so element-wise operators and imaginary literals inside
+    them never leak into the emitted Python."""
+
+    def test_elementwise_ops_inside_sqrt(self):
+        self.assertEqual(
+            _translate_expr("sqrt((I1.*I1)+(Q1.*Q1))", set(), set()),
+            "np.sqrt((I1 * I1) + (Q1 * Q1))",
+        )
+
+    def test_imaginary_literal_inside_exp(self):
+        self.assertEqual(
+            _translate_expr("exp(1i * (n - 1) * phase)", set(), set()),
+            "np.exp(1j * (n - 1) @ phase)",
+        )
+
+    def test_builtin_arg_translation_output_parses(self):
+        for expr in (
+            "sqrt((I1.*I1)+(Q1.*Q1))",
+            "sqrt(I1.*I1 + Q1./I1)",
+            "sin(2*pi*f1*t)",
+        ):
+            out = _translate_expr(expr, set(), set())
+            self.assertNotEqual(out, UNRESOLVED)
+            ast.parse(out)
+
+
+class TestKeywordIdentifiers(unittest.TestCase):
+    """MATLAB identifiers that collide with Python keywords (e.g. lambda)
+    are renamed consistently across a function's signature and body."""
+
+    def test_lambda_parameter_renamed(self):
+        from reader import MATLAB_TO_PYTHON, load_structure_from_source
+
+        source = "function af = beamform_basic(N, d, lambda, theta)\n    k = 2 * pi / lambda;\nend"
+        structure = load_structure_from_source(source, MATLAB_TO_PYTHON)
+        result = translate_with_rulebook(structure)
+        func = result["functions"][0]
+        self.assertNotIn("lambda", func["parameters"])
+        for stmt in func["statements"]:
+            self.assertNotIn(" lambda ", " %s " % stmt["python"])
+            self.assertNotIn("= lambda", stmt["python"])
+            self.assertNotIn("(lambda", stmt["python"])
+            ast.parse(stmt["python"])
 
 
 class TestFindAndInterp1Rules(unittest.TestCase):
