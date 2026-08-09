@@ -3,6 +3,7 @@ import re
 
 from reader.extract_structure import split_range
 
+from .attribute_rules import apply_attribute_rule_reverse
 from .builtin_rules import BUILTIN_RULES, apply_builtin_rule, apply_builtin_rule_reverse
 from .complex_rules import apply_complex_rule
 from .format_rules import convert_fprintf
@@ -1322,6 +1323,10 @@ def _translate_expr_reverse(expr):
 
     if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*\s*\[.*\]", expr):
         return apply_indexing_rule_reverse(expr)
+
+    attribute = apply_attribute_rule_reverse(expr)
+    if attribute != expr:
+        return attribute
 
     reversed_expr = apply_operator_rule_reverse(expr)
     if reversed_expr != expr:

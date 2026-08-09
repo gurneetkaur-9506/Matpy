@@ -1,3 +1,7 @@
+from .attribute_rules import (
+    ATTRIBUTE_RULES_REVERSE,
+    apply_attribute_rule_reverse,
+)
 from .builtin_rules import (
     BUILTIN_RULES,
     apply_builtin_rule,
@@ -35,6 +39,8 @@ __all__ = [
     "MULTI_OUTPUT_RULES",
     "OPERATOR_RULES",
     "UNRESOLVED",
+    "ATTRIBUTE_RULES_REVERSE",
+    "apply_attribute_rule_reverse",
     "apply_builtin_rule",
     "apply_builtin_rule_reverse",
     "apply_complex_rule",
