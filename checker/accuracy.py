@@ -156,13 +156,19 @@ def accuracy(result):
                     {"source": "unresolved", "lines": unresolved, "weight": 0.0}
                 )
         elif func.get("draft"):
-            items.append(
-                {
-                    "source": "assistant",
-                    "lines": count,
-                    "weight": float(func["draft"].get("confidence", 0.0)),
-                }
-            )
+            resolved = count - unresolved
+            if resolved:
+                items.append(
+                    {
+                        "source": "assistant",
+                        "lines": resolved,
+                        "weight": float(func["draft"].get("confidence", 0.0)),
+                    }
+                )
+            if unresolved:
+                items.append(
+                    {"source": "unresolved", "lines": unresolved, "weight": 0.0}
+                )
         else:
             resolved = count - unresolved
             if resolved:

@@ -155,6 +155,56 @@ class TestAccuracy(unittest.TestCase):
         self.assertEqual(scored["breakdown"]["rulebook"], 1.0)
         self.assertEqual(scored["breakdown"]["unresolved"], 0.0)
 
+    def test_broken_line_in_clean_file_always_unresolved(self):
+        clean = [
+            {
+                "kind": "assignment",
+                "source": "a = 1;",
+                "python": "a = 1",
+            },
+            {
+                "kind": "assignment",
+                "source": "b = 2;",
+                "python": "b = 2",
+            },
+        ]
+        broken = [
+            {
+                "kind": "assignment",
+                "source": "c = (;",
+                "python": "c = (",
+            }
+        ]
+        func = {
+            "name": "f",
+            "parameters": [],
+            "outputs": [],
+            "statements": clean + broken,
+        }
+        scored = accuracy(_result(total=3, functions=[func]))
+        self.assertEqual(scored["total_lines"], 3)
+        self.assertEqual(scored["score"], 66.67)
+        self.assertEqual(scored["breakdown"]["rulebook"], 2.0)
+        self.assertEqual(scored["breakdown"]["unresolved"], 0.0)
+
+    def test_broken_line_in_drafted_function_still_unresolved(self):
+        statements = [
+            {"kind": "assignment", "source": "a = 1;", "python": "a = 1"},
+            {"kind": "assignment", "source": "c = (;", "python": "c = ("},
+        ]
+        func = {
+            "name": "f",
+            "parameters": [],
+            "outputs": [],
+            "statements": statements,
+            "draft": {"code": "draft", "confidence": 1.0, "notes": []},
+        }
+        scored = accuracy(_result(total=2, functions=[func]))
+        self.assertEqual(scored["score"], 50.0)
+        self.assertEqual(scored["breakdown"]["assistant"], 1.0)
+        self.assertIn("unresolved", scored["breakdown"])
+        self.assertEqual(scored["breakdown"]["unresolved"], 0.0)
+
     def test_loop_with_invalid_body_downgraded(self):
         body = [
             {
