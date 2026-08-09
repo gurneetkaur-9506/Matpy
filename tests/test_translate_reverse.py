@@ -190,5 +190,26 @@ class TestTranslateWithRulebookReverse(unittest.TestCase):
         )
 
 
+    def test_plt_xlabel_maps_to_matlab_xlabel(self):
+        self.assertEqual(
+            self._translate_expr_stmt("plt.xlabel('Time (s)')"),
+            "xlabel('Time (s)');",
+        )
+        self.assertEqual(
+            self._translate_expr_stmt('plt.xlabel("Frequency (Hz)")'),
+            'xlabel("Frequency (Hz)");',
+        )
+
+    def test_plt_ylabel_maps_to_matlab_ylabel(self):
+        self.assertEqual(
+            self._translate_expr_stmt("plt.ylabel('Amplitude')"),
+            "ylabel('Amplitude');",
+        )
+        self.assertEqual(
+            self._translate_expr_stmt('plt.ylabel("Power (dB)")'),
+            'ylabel("Power (dB)");',
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
