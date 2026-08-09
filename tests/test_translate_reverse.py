@@ -124,6 +124,21 @@ class TestTranslateWithRulebookReverse(unittest.TestCase):
             'disp("hello")',
         )
 
+    def test_print_single_argument_maps_to_disp(self):
+        self.assertEqual(self._translate_expr_stmt("print(x)"), "disp(x)")
+
+    def test_print_percent_single_arg_maps_to_fprintf(self):
+        self.assertEqual(
+            self._translate_expr_stmt('print("%.2f" % x)'),
+            "fprintf('%.2f', x)",
+        )
+
+    def test_print_percent_two_args_maps_to_fprintf(self):
+        self.assertEqual(
+            self._translate_expr_stmt('print("%.2f, %.2f" % (x, y))'),
+            "fprintf('%.2f, %.2f', x, y)",
+        )
+
     def test_print_with_percent_in_string_but_no_format_op_stays_disp(self):
         self.assertEqual(
             self._translate_expr_stmt('print("50% done")'),
