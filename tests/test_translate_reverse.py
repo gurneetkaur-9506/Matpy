@@ -246,5 +246,26 @@ class TestTranslateWithRulebookReverse(unittest.TestCase):
         )
 
 
+    def test_plt_xlim_maps_to_matlab_xlim_vector(self):
+        self.assertEqual(
+            self._translate_expr_stmt("plt.xlim([a, b])"),
+            "xlim([a b]);",
+        )
+        self.assertEqual(
+            self._translate_expr_stmt("plt.xlim([0, 10])"),
+            "xlim([0 10]);",
+        )
+
+    def test_plt_ylim_maps_to_matlab_ylim_vector(self):
+        self.assertEqual(
+            self._translate_expr_stmt("plt.ylim([a, b])"),
+            "ylim([a b]);",
+        )
+        self.assertEqual(
+            self._translate_expr_stmt("plt.ylim([-1.5, 1.5])"),
+            "ylim([-1.5 1.5]);",
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

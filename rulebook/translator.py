@@ -348,6 +348,23 @@ def _spread_limit_vector(translated):
     return match.group(1)
 
 
+def _flatten_limit_vector_reverse(argtext):
+    """Flatten a Python list argument into a MATLAB space-separated vector
+    for the limit-style matplotlib functions (xlim/ylim/axis):
+    ``plt.xlim([0, 10])`` -> ``xlim([0 10])``."""
+    s = argtext.strip()
+    if not (s.startswith("[") and s.endswith("]")):
+        return None
+    parts = _split_top_level(s[1:-1], ",")
+    parts = [p.strip() for p in parts]
+    if not parts or any(not p for p in parts):
+        return None
+    translated = [_translate_expr_reverse(p) for p in parts]
+    if any(t == UNRESOLVED for t in translated):
+        return None
+    return "[%s]" % " ".join(translated)
+
+
 def _translate_plot_command(text):
     """Translate a bare MATLAB plot-styling/config command statement (grid
     on, hold on, shading flat, axis equal, colorbar, ...) through the
@@ -394,12 +411,14 @@ _PLOT_DOTTED_CALL = re.compile(
 def _translate_plot_command_reverse(expr):
     """Translate a matplotlib plot command such as ``plt.subplot(2, 2, 1)``,
     ``plt.plot(x, y)`` or ``ax.set_zlabel('z')`` back to its MATLAB form.
-    Only the PLOT_COMMANDS entries that map onto a plain call -- no limit
-    vectors, spreads or no-op commands -- are handled.  Flag commands such
-    as ``plt.grid(True)`` become MATLAB flag words (``grid on;``).  Keyword
-    arguments such as ``linewidth=2`` become MATLAB name-value pairs
-    (``'LineWidth', 2``).  The trailing semicolon suppresses display of the
-    returned handle, matching typical MATLAB script style."""
+    Only the PLOT_COMMANDS entries that map onto a plain call -- no spreads
+    or no-op commands -- are handled.  Flag commands such as
+    ``plt.grid(True)`` become MATLAB flag words (``grid on;``).  Limit
+    commands such as ``plt.xlim([0, 10])`` become MATLAB space-separated
+    vectors (``xlim([0 10]);``).  Keyword arguments such as ``linewidth=2``
+    become MATLAB name-value pairs (``'LineWidth', 2``).  The trailing
+    semicolon suppresses display of the returned handle, matching typical
+    MATLAB script style."""
     match = _PLOT_DOTTED_CALL.fullmatch(expr)
     if match is None:
         return expr
@@ -415,7 +434,14 @@ def _translate_plot_command_reverse(expr):
         if flag_name is None:
             return UNRESOLVED
         return "%s %s;" % (name, flag_name)
-    if "vector" in spec or "spread" in spec or "noop" in spec:
+    if spec.get("vector"):
+        if len(_split_top_level(argtext, ",")) != 1:
+            return UNRESOLVED
+        flat = _flatten_limit_vector_reverse(argtext)
+        if flat is None:
+            return UNRESOLVED
+        return "%s(%s);" % (name, flat)
+    if "spread" in spec or "noop" in spec:
         return expr
     translated = []
     for a in _split_top_level(argtext, ","):
