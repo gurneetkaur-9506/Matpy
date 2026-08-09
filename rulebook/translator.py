@@ -376,6 +376,7 @@ def _translate_plot_command(text):
 # name-value pair (keyword name -> MATLAB property name).
 _PLOT_KWARGS_REVERSE = {
     "linewidth": "LineWidth",
+    "color": "Color",
 }
 
 _KWARG_REVERSE = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)\s*=(?!\=)(.*)$")

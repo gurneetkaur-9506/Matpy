@@ -164,5 +164,20 @@ class TestTranslateWithRulebookReverse(unittest.TestCase):
         )
 
 
+    def test_plt_plot_with_color(self):
+        self.assertEqual(
+            self._translate_expr_stmt("plt.plot(x, y, color='r')"),
+            "plot(x, y, 'Color', 'r');",
+        )
+        self.assertEqual(
+            self._translate_expr_stmt("plt.plot(x, y, 'r')"),
+            "plot(x, y, 'r');",
+        )
+        self.assertEqual(
+            self._translate_expr_stmt("plt.plot(x, y, 'r--')"),
+            "plot(x, y, 'r--');",
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
