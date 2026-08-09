@@ -267,5 +267,16 @@ class TestTranslateWithRulebookReverse(unittest.TestCase):
         )
 
 
+    def test_plt_tight_layout_is_noop_comment(self):
+        result = self._translate_expr_stmt("plt.tight_layout()")
+        self.assertNotEqual(result, UNRESOLVED)
+        self.assertTrue(result.startswith("%"))
+
+    def test_plt_show_is_noop_comment(self):
+        result = self._translate_expr_stmt("plt.show()")
+        self.assertNotEqual(result, UNRESOLVED)
+        self.assertTrue(result.startswith("%"))
+
+
 if __name__ == "__main__":
     unittest.main()

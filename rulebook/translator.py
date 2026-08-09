@@ -403,6 +403,13 @@ _PLOT_COMMANDS_REVERSE = {
     spec["func"]: name for name, spec in PLOT_COMMANDS.items() if "func" in spec
 }
 
+# python call targets with no MATLAB equivalent -> reverse output emits a
+# no-op comment instead of a translated command.
+_PLOT_NOOP_REVERSE = {
+    "plt.tight_layout": "no MATLAB equivalent; the figure layout adjusts automatically",
+    "plt.show": "the figure is displayed automatically in MATLAB",
+}
+
 _PLOT_DOTTED_CALL = re.compile(
     r"([A-Za-z_][A-Za-z0-9_]*)\.([A-Za-z_][A-Za-z0-9_]*)\s*\((.*)\)", re.DOTALL
 )
@@ -412,7 +419,8 @@ def _translate_plot_command_reverse(expr):
     """Translate a matplotlib plot command such as ``plt.subplot(2, 2, 1)``,
     ``plt.plot(x, y)`` or ``ax.set_zlabel('z')`` back to its MATLAB form.
     Only the PLOT_COMMANDS entries that map onto a plain call -- no spreads
-    or no-op commands -- are handled.  Flag commands such as
+    -- are handled; no-op calls such as ``plt.tight_layout()`` or
+    ``plt.show()`` emit a comment instead.  Flag commands such as
     ``plt.grid(True)`` become MATLAB flag words (``grid on;``).  Limit
     commands such as ``plt.xlim([0, 10])`` become MATLAB space-separated
     vectors (``xlim([0 10]);``).  Keyword arguments such as ``linewidth=2``
@@ -423,7 +431,11 @@ def _translate_plot_command_reverse(expr):
     if match is None:
         return expr
     obj, method, argtext = match.group(1), match.group(2), match.group(3)
-    name = _PLOT_COMMANDS_REVERSE.get("%s.%s" % (obj, method))
+    target = "%s.%s" % (obj, method)
+    noop_reason = _PLOT_NOOP_REVERSE.get(target)
+    if noop_reason is not None:
+        return "%% %s: %s" % (target, noop_reason)
+    name = _PLOT_COMMANDS_REVERSE.get(target)
     if name is None:
         return expr
     spec = PLOT_COMMANDS[name]
