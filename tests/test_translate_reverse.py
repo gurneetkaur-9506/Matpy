@@ -131,5 +131,16 @@ class TestTranslateWithRulebookReverse(unittest.TestCase):
         )
 
 
+    def test_plt_subplot_maps_to_matlab_subplot(self):
+        self.assertEqual(
+            self._translate_expr_stmt("plt.subplot(2, 2, 1)"),
+            "subplot(2, 2, 1);",
+        )
+        self.assertEqual(
+            self._translate_expr_stmt("plt.subplot(1, 2, 2)"),
+            "subplot(1, 2, 2);",
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

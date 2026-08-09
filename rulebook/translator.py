@@ -372,6 +372,20 @@ def _translate_plot_command(text):
     return "%s(%s)" % (spec["func"], call_args)
 
 
+def _translate_plot_command_reverse(expr):
+    """Translate a matplotlib plot command such as ``plt.subplot(2, 2, 1)``
+    back to its MATLAB form.  The trailing semicolon suppresses display of
+    the returned axes handle, matching typical MATLAB script style."""
+    match = re.fullmatch(r"plt\.subplot\s*\((.*)\)", expr, re.DOTALL)
+    if match is None:
+        return expr
+    args = _split_top_level(match.group(1), ",")
+    translated = [_translate_expr_reverse(a) for a in args]
+    if any(t == UNRESOLVED for t in translated):
+        return UNRESOLVED
+    return "subplot(%s);" % ", ".join(translated)
+
+
 def _translate_expr(expr, scalars=None, declared=None):
     expr = expr.strip()
     if not expr:
@@ -1324,6 +1338,9 @@ def _translate_expr_reverse(expr):
         reversed_call = apply_builtin_rule_reverse(expr)
         if reversed_call != expr:
             return reversed_call
+        plot_reversed = _translate_plot_command_reverse(expr)
+        if plot_reversed != expr:
+            return plot_reversed
         return UNRESOLVED
 
     if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*\s*\[.*\]", expr):
