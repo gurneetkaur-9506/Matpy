@@ -630,6 +630,27 @@ class TestImagescRule(unittest.TestCase):
             "plt.imshow(Z, extent=[x[0],x[-1],y[0],y[-1]], origin='lower', aspect='auto')",
         )
 
+    def test_axis_xy_after_imagesc_attaches_origin_lower(self):
+        structure = Structure(
+            statements=[
+                Statement("function_call", "imagesc(x, y, Z)"),
+                Statement("command", "axis xy"),
+            ]
+        )
+        result = translate_with_rulebook(structure)
+        statements = result["statements"]
+        self.assertEqual(
+            statements[0]["python"],
+            "plt.imshow(Z, extent=[x[0],x[-1],y[0],y[-1]], origin='lower', aspect='auto')",
+        )
+        self.assertNotEqual(statements[1]["python"], UNRESOLVED)
+        self.assertIn("origin set to 'lower'", statements[1]["python"])
+
+    def test_axis_xy_without_preceding_imshow_stays_unresolved(self):
+        structure = Structure(statements=[Statement("command", "axis xy")])
+        result = translate_with_rulebook(structure)
+        self.assertEqual(result["statements"][0]["python"], UNRESOLVED)
+
 
 class TestCaxisRule(unittest.TestCase):
     def _translate(self, text):

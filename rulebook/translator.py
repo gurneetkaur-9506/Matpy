@@ -1022,6 +1022,52 @@ def _translation_key(stmt):
     return "matlab"
 
 
+def _attach_origin_lower(imshow_line):
+    """Return ``imshow_line`` with ``origin='lower'`` inserted before the
+    final closing paren, unless it already carries an ``origin=`` argument."""
+    if "origin=" in imshow_line:
+        return imshow_line
+    if imshow_line.startswith("plt.imshow(") and imshow_line.endswith(")"):
+        return "%s, origin='lower')" % imshow_line[:-1]
+    return imshow_line
+
+
+def _resolve_axis_xy(statements):
+    """Post-pass: a bare 'axis xy' command attaches ``origin='lower'`` to the
+    nearest preceding imagesc/imshow statement instead of staying UNRESOLVED.
+
+    MATLAB's ``axis xy`` flips the y-axis so image row 1 is at the bottom;
+    matplotlib expresses the same thing with ``origin='lower'`` on the imshow
+    call.  The pass walks the translated statements in order, remembers the
+    most recent ``plt.imshow(...)`` line, and rewrites the axis-xy command to
+    a resolved comment (attaching origin to that imshow) when one precedes it.
+    Without a preceding imshow the command keeps its UNRESOLVED status.
+    Recurses into block bodies so the invariant holds inside loops too.
+    """
+    cleaned = []
+    last_imshow = None
+    for stmt in statements:
+        if not isinstance(stmt, dict):
+            cleaned.append(stmt)
+            continue
+        if stmt.get("body"):
+            stmt = dict(stmt)
+            stmt["body"] = _resolve_axis_xy(stmt["body"])
+        source = (stmt.get("source") or "").strip()
+        if stmt.get("kind") == "command" and source == "axis xy":
+            if last_imshow is not None:
+                last_imshow["python"] = _attach_origin_lower(last_imshow["python"])
+                stmt = dict(stmt)
+                stmt["python"] = "# axis xy: image origin set to 'lower'"
+            cleaned.append(stmt)
+            continue
+        cleaned.append(stmt)
+        python = stmt.get("python")
+        if isinstance(python, str) and python.startswith("plt.imshow("):
+            last_imshow = stmt
+    return cleaned
+
+
 def collapse_unresolved_blocks(statements):
     """Enforce the atomic-block invariant across a list of translated
     statements, as a general post-pass applied after every translation
@@ -1228,8 +1274,10 @@ def translate_with_rulebook(structure):
         target = _declare_target(stmt.text) if hasattr(stmt, "kind") else None
         if target:
             declared.add(renames.get(target, target))
+    result["statements"] = _resolve_axis_xy(result["statements"])
     result["statements"] = collapse_unresolved_blocks(result["statements"])
     for func in result["functions"]:
+        func["statements"] = _resolve_axis_xy(func["statements"])
         func["statements"] = collapse_unresolved_blocks(func["statements"])
     assert_block_invariant(result)
     return result
