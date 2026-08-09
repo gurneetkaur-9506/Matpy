@@ -87,6 +87,15 @@ class TestApplyOperatorRule(unittest.TestCase):
             "np.linalg.solve(c.T, np.linalg.solve(b.T, a.T).T.T).T",
         )
 
+    def test_scalar_power_maps_to_double_star(self):
+        self.assertEqual(apply_operator_rule("2^3"), "2 ** 3")
+
+    def test_elementwise_power_maps_to_double_star(self):
+        self.assertEqual(apply_operator_rule("x.^2"), "x ** 2")
+
+    def test_scalar_power_in_expression_maps_to_double_star(self):
+        self.assertEqual(apply_operator_rule("2^3 * xAxisStep"), "2 ** 3 * xAxisStep")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -121,15 +121,23 @@ def is_scalar_like(expr):
         return all(is_scalar_like(a) for a in args)
 
     depth = 0
-    for i, ch in enumerate(expr):
+    i = 0
+    while i < len(expr):
+        ch = expr[i]
         if ch in "([":
             depth += 1
         elif ch in ")]":
             depth -= 1
-        elif depth == 0 and ch in "+-*/":
-            if ch == "-" and (i == 0 or expr[i - 1] in "+-*/"):
-                continue
-            return is_scalar_like(expr[:i]) and is_scalar_like(expr[i + 1:])
+        elif depth == 0:
+            two = expr[i:i + 2]
+            if two in (".*", "./", ".^"):
+                return is_scalar_like(expr[:i]) and is_scalar_like(expr[i + 2:])
+            if ch in "+-*/^":
+                if ch == "-" and (i == 0 or expr[i - 1] in "+-*/^"):
+                    i += 1
+                    continue
+                return is_scalar_like(expr[:i]) and is_scalar_like(expr[i + 1:])
+        i += 1
     return False
 
 
@@ -190,8 +198,8 @@ def _find_last_operator(expr):
 
     # Element-wise power (.^) binds tighter than every multiplicative
     # operator, so it is looked for only after * / .* ./ have been ruled
-    # out at the current depth.  A bare '^' (MATLAB matrix power) is not an
-    # element-wise operator and is left for the caller to pass through.
+    # out at the current depth.  A bare '^' (MATLAB matrix power) on scalar
+    # operands is identical to element-wise power and also maps to '**'.
     idx = _find("^")
     if idx is not None:
         if (
@@ -200,7 +208,7 @@ def _find_last_operator(expr):
             and (idx - 1) not in protected
         ):
             return idx - 1, ".^"
-        return None, None
+        return idx, "^"
 
     return None, None
 
@@ -280,6 +288,10 @@ def apply_operator_rule(expr):
     if op == "./":
         return "%s / %s" % (left, right)
     if op == ".^":
+        return "%s ** %s" % (left, right)
+    if op == "^":
+        # MATLAB '^' is matrix power, but for scalar operands (2^3) it is
+        # identical to element-wise power and maps to Python '**'.
         return "%s ** %s" % (left, right)
     if op == "/":
         # MATLAB '/' is matrix right-division (solve a * x = b) ONLY when

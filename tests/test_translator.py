@@ -539,6 +539,15 @@ class TestFFTDivisionAndRange(unittest.TestCase):
             "fs * (np.arange(0, len(P1))) / len(P2)",
         )
 
+    def test_plain_caret_scalar_power_maps_to_double_star(self):
+        self.assertEqual(_translate_expr("2^3"), "2 ** 3")
+
+    def test_plain_caret_scalar_variable_power_maps_to_double_star(self):
+        self.assertEqual(_translate_expr("x^2"), "x ** 2")
+
+    def test_elementwise_caret_power_maps_to_double_star(self):
+        self.assertEqual(_translate_expr("x.^2"), "x ** 2")
+
 
 class TestRangesInAnyContext(unittest.TestCase):
     """Colon ranges translate in ANY syntactic context, not just as a
