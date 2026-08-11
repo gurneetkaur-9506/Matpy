@@ -6,7 +6,6 @@ from repo_paths import sample_matlab
 from translator import translate_file
 
 SAMPLE_FILES = [
-    sample_matlab("builtins_demo.m"),
     sample_matlab("indexing_ops.m"),
     sample_matlab("fft_basic.m"),
     sample_matlab("beamform_basic.m"),

@@ -225,8 +225,4 @@ def translate_feof_statement(text, io):
     return translate_fscanf(target, value, io)
 
 
-def feof_header_fid(header):
-    """Return the file-handle name referenced by ``while ~feof(fid)``, or
-    None when the header is not a feof loop."""
-    match = _FEOF_RE.fullmatch(header.strip())
-    return match.group(1) if match else None
+

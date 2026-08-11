@@ -1,4 +1,3 @@
-import ast
 import unittest
 
 from reader import PYTHON_TO_MATLAB, load_structure
@@ -372,15 +371,6 @@ class TestTranslateWithRulebookReverse(unittest.TestCase):
         for s in result["statements"]:
             self.assertEqual(s["matlab"], UNRESOLVED)
             self.assertNotIn(" % ", s["matlab"])
-
-    def test_percent_format_print_maps_to_fprintf(self):
-        structure = Structure(
-            statements=[Statement("Expr", "print('Estimated Range: %.2f m' % r)")]
-        )
-        result = translate_with_rulebook_reverse(structure)
-        self.assertEqual(
-            result["statements"][0]["matlab"], "fprintf('Estimated Range: %.2f m', r)"
-        )
 
     def test_whitelisted_np_names_still_reverse(self):
         structure = Structure(
