@@ -7,20 +7,6 @@ from reader import PYTHON_TO_MATLAB
 from tests.paths import sample_matlab, sample_python
 from translator import translate_file, translate_source
 
-FAKE_RESPONSE = """CODE
-import numpy as np
-
-def f(x):
-    return np.sum(x)
-END CODE
-CONFIDENCE
-0.6
-END CONFIDENCE
-UNSURE
-- assumed x is 1-D
-END UNSURE
-"""
-
 FFT_MATLAB = sample_matlab("fft_basic.m")
 INDEXING_PYTHON = sample_python("indexing_ops_py.py")
 
@@ -32,22 +18,18 @@ class TestTranslateFile(unittest.TestCase):
         self.assertEqual(result["sections"]["reader"]["status"], "ok")
         self.assertEqual(result["sections"]["rulebook"]["status"], "ok")
         self.assertEqual(result["sections"]["rulebook"]["unresolved"], 0)
-        self.assertEqual(result["sections"]["assistant"]["status"], "none")
         self.assertEqual(
             result["sections"]["checker"]["status"], "inconclusive_no_matlab"
         )
         self.assertIn("import numpy as np", result["python"])
 
-    @mock.patch("assistant.draft_translation._call_ollama", return_value=FAKE_RESPONSE)
-    def test_beamform_sections(self, mock_call):
+    def test_beamform_sections(self):
         result = translate_file(sample_matlab("beamform_basic.m"))
         self.assertEqual(result["status"], "ok")
         self.assertEqual(result["sections"]["reader"]["status"], "ok")
         self.assertEqual(result["sections"]["reader"]["functions"], ["beamform_basic"])
         self.assertEqual(result["sections"]["rulebook"]["status"], "ok")
         self.assertEqual(result["sections"]["rulebook"]["unresolved"], 0)
-        self.assertEqual(result["sections"]["assistant"]["status"], "none")
-        self.assertEqual(result["sections"]["assistant"]["drafted"], [])
         self.assertEqual(
             result["sections"]["checker"]["status"], "inconclusive_no_matlab"
         )
@@ -57,8 +39,7 @@ class TestTranslateFile(unittest.TestCase):
         self.assertEqual(result["status"], "error")
         self.assertEqual(result["sections"]["reader"]["status"], "error")
 
-    @mock.patch("assistant.draft_translation._call_ollama", return_value=FAKE_RESPONSE)
-    def test_checker_runs_when_inputs_provided(self, mock_call):
+    def test_checker_runs_when_inputs_provided(self):
         result = translate_file(
             sample_matlab("beamform_basic.m"),
             inputs={
@@ -80,7 +61,6 @@ class TestTranslateFile(unittest.TestCase):
     def test_checker_skipped_when_engine_available_no_inputs(self, mock_engine):
         result = translate_file(sample_matlab("indexing_ops.m"))
         self.assertEqual(result["sections"]["checker"]["status"], "skipped")
-
     @mock.patch("translator.verify", return_value="failed")
     @mock.patch("translator.matlab_engine_available", return_value=True)
     def test_checker_failed_preserved_when_engine_available(
@@ -138,8 +118,7 @@ class TestTranslateFile(unittest.TestCase):
         self.assertEqual(result["status"], "error")
         self.assertEqual(result["sections"]["reader"]["status"], "error")
 
-    @mock.patch("assistant.draft_translation._call_ollama", return_value=FAKE_RESPONSE)
-    def test_reverse_outputs_matlab_from_beamform(self, mock_call):
+    def test_reverse_outputs_matlab_from_beamform(self):
         result = translate_file(
             sample_python("beamform_basic_py.py"),
             direction=PYTHON_TO_MATLAB,
@@ -154,8 +133,7 @@ class TestTranslateFile(unittest.TestCase):
         result = translate_file(sample_matlab("indexing_ops.m"))
         self.assertEqual(result["problems"], [])
 
-    @mock.patch("assistant.draft_translation._call_ollama", return_value=FAKE_RESPONSE)
-    def test_reverse_problem_lines_include_unresolved(self, mock_call):
+    def test_reverse_problem_lines_include_unresolved(self):
         result = translate_file(
             sample_python("beamform_basic_py.py"),
             direction=PYTHON_TO_MATLAB,

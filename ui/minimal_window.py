@@ -53,10 +53,10 @@ _MARKER_STYLE = {
 def section_marker(status):
     if status in ("ok", "verified", "none"):
         return "verified"
-    if status in ("unresolved", "drafted", "review needed", "skipped",
+    if status in ("unresolved", "review needed", "skipped",
                   "inconclusive_no_matlab"):
         return "unverified"
-    if status in ("error", "failed", "errored"):
+    if status in ("error", "failed"):
         return "flagged"
     return "unverified"
 
@@ -124,7 +124,7 @@ class MinimalTranslatorWindow(QMainWindow):
         self.details_widget = QWidget()
         details_row = QHBoxLayout()
         details_row.addWidget(QLabel("Stage status:"))
-        for stage in ("reader", "rulebook", "assistant", "checker"):
+        for stage in ("reader", "rulebook", "checker"):
             label = QLabel("%s: pending" % stage.title())
             label.setStyleSheet(_MARKER_STYLE["pending"])
             self.section_labels[stage] = label

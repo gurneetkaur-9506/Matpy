@@ -1,5 +1,4 @@
 import unittest
-from unittest import mock
 
 import ast
 import numpy as np
@@ -21,19 +20,6 @@ BEAMFORM_INPUTS = {
     "theta0": 0.0,
 }
 
-LOW_CONFIDENCE_RESPONSE = """CODE
-function af = beamform_basic(N, d, lamb, theta, theta0)
-    af = zeros(size(theta));
-end
-END CODE
-CONFIDENCE
-0.4
-END CONFIDENCE
-UNSURE
-- assumed phase expansion broadcasts
-END UNSURE
-"""
-
 
 def _stmt(kind, source, unresolved=True, body=None):
     stmt = {"kind": kind, "source": source}
@@ -48,14 +34,8 @@ def _stmt(kind, source, unresolved=True, body=None):
     return stmt
 
 
-def _func(name, statements, confidence=None, notes=None):
+def _func(name, statements):
     func = {"name": name, "parameters": [], "outputs": [], "statements": statements}
-    if confidence is not None:
-        func["draft"] = {
-            "code": "draft code",
-            "confidence": confidence,
-            "notes": notes or [],
-        }
     return func
 
 
@@ -232,47 +212,6 @@ class TestLineNumbers(unittest.TestCase):
         self.assertIsNone(build_translation_report(result)[0]["line"])
 
 
-class TestAssistantFlags(unittest.TestCase):
-    def test_low_confidence_draft_flagged_with_notes(self):
-        func = _func(
-            "beamform_basic",
-            [],
-            confidence=0.4,
-            notes=["uncertainty flagged: assumed phase expansion broadcasts"],
-        )
-        result = _result(functions=[func], file=BEAMFORM_PYTHON)
-        report = build_translation_report(result)
-        self.assertEqual(len(report), 1)
-        entry = report[0]
-        self.assertEqual(entry["issue"], "low confidence")
-        self.assertEqual(entry["stage"], "assistant")
-        self.assertEqual(entry["source"], "beamform_basic")
-        self.assertEqual(entry["line"], 4)
-        self.assertIn("assumed phase expansion broadcasts", entry["reason"])
-        self.assertIn("beamform_basic", entry["attempted"])
-
-    def test_low_confidence_without_notes_uses_fallback(self):
-        func = _func("f", [], confidence=0.2, notes=[])
-        result = _result(functions=[func])
-        entry = build_translation_report(result)[0]
-        self.assertIn("confidence", entry["reason"])
-
-    def test_high_confidence_draft_not_flagged(self):
-        func = _func("f", [], confidence=0.9, notes=[])
-        result = _result(functions=[func])
-        self.assertEqual(build_translation_report(result), [])
-
-    def test_confidence_just_below_threshold_flagged(self):
-        func = _func("f", [], confidence=0.49, notes=[])
-        result = _result(functions=[func])
-        self.assertEqual(len(build_translation_report(result)), 1)
-
-    def test_confidence_at_threshold_not_flagged(self):
-        func = _func("f", [], confidence=0.5, notes=[])
-        result = _result(functions=[func])
-        self.assertEqual(build_translation_report(result), [])
-
-
 class TestCheckerVerdicts(unittest.TestCase):
     def test_failed_verdict_reported(self):
         result = _result(checker="failed")
@@ -340,11 +279,7 @@ class TestReportWithBeamform(unittest.TestCase):
         syntax_sources = {e["source"] for e in build_translation_report(result)}
         self.assertNotIn("k = 2 * pi / lambda", syntax_sources)
 
-    @mock.patch(
-        "assistant.draft_translation._call_ollama",
-        return_value=LOW_CONFIDENCE_RESPONSE,
-    )
-    def test_beamform_reverse_report_has_all_issue_kinds(self, mock_call):
+    def test_beamform_reverse_report_has_unresolved_and_checker_verdict(self):
         result = translate_file(
             BEAMFORM_PYTHON,
             direction=PYTHON_TO_MATLAB,
@@ -353,14 +288,9 @@ class TestReportWithBeamform(unittest.TestCase):
         report = build_translation_report(result)
         issues = [e["issue"] for e in report]
         self.assertIn("unresolved", issues)
-        self.assertIn("low confidence", issues)
         self.assertIn("inconclusive_no_matlab", issues)
 
         by_issue = {e["issue"]: e for e in report}
-        low = by_issue["low confidence"]
-        self.assertEqual(low["line"], 4)
-        self.assertEqual(low["source"], "beamform_basic")
-        self.assertIn("assumed phase expansion broadcasts", low["reason"])
 
         unresolved = [e for e in report if e["issue"] == "unresolved"]
         sources = {e["source"] for e in unresolved}

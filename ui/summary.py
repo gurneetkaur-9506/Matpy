@@ -25,12 +25,9 @@ def summarize(result):
     rulebook = result["sections"]["rulebook"]
     total = rulebook["total"]
     unresolved = rulebook["unresolved"]
-    drafted = result["sections"]["assistant"]["drafted"]
     rulebook_pct = (total - unresolved) / total * 100 if total else 100.0
-    assistant_pct = unresolved / total * 100 if total and drafted else 0.0
     return {
         "rulebook_pct": rulebook_pct,
-        "assistant_pct": assistant_pct,
         "checker": result["sections"]["checker"]["status"],
     }
 
@@ -39,10 +36,9 @@ def status_counts(result):
     rulebook = result["sections"].get("rulebook", {})
     total = rulebook.get("total", 0)
     unresolved = rulebook.get("unresolved", 0)
-    drafted = len(result["sections"].get("assistant", {}).get("drafted") or [])
     checker = result["sections"].get("checker", {}).get("status", "skipped")
     verified = total if checker == "verified" else 0
-    return total - unresolved, unresolved + drafted, verified
+    return total - unresolved, unresolved, verified
 
 
 def status_line(result):
@@ -138,7 +134,6 @@ def summarize_translation(paths=None, beamform_inputs=None):
             {
                 "file": name,
                 "rulebook_pct": summary["rulebook_pct"],
-                "assistant_pct": summary["assistant_pct"],
                 "checker": summary["checker"],
             }
         )
@@ -146,13 +141,13 @@ def summarize_translation(paths=None, beamform_inputs=None):
 
 
 def print_summary(rows):
-    header = "%-20s %12s %12s  %s" % ("filename", "rulebook%", "assistant%", "verification")
+    header = "%-20s %12s  %s" % ("filename", "rulebook%", "verification")
     print(header)
     print("-" * len(header))
     for row in rows:
         print(
-            "%-20s %11.1f%% %11.1f%%  %s"
-            % (row["file"], row["rulebook_pct"], row["assistant_pct"], row["checker"])
+            "%-20s %11.1f%%  %s"
+            % (row["file"], row["rulebook_pct"], row["checker"])
         )
 
 

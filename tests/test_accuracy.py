@@ -1,5 +1,4 @@
 import unittest
-from unittest import mock
 
 from checker import accuracy, score_mix
 from reader import PYTHON_TO_MATLAB
@@ -8,7 +7,7 @@ from tests.paths import sample_matlab, sample_python
 from translator import translate_file
 
 
-def _func(name, count, unresolved=0, confidence=None):
+def _func(name, count, unresolved=0):
     statements = [
         {"kind": "assignment", "source": "x%d = %d;" % (i, i), "python": "x%d = %d" % (i, i)}
         for i in range(count)
@@ -16,8 +15,6 @@ def _func(name, count, unresolved=0, confidence=None):
     for i in range(unresolved):
         statements[i]["python"] = UNRESOLVED
     func = {"name": name, "parameters": [], "outputs": [], "statements": statements}
-    if confidence is not None:
-        func["draft"] = {"code": "draft code", "confidence": confidence, "notes": []}
     return func
 
 
@@ -29,7 +26,6 @@ def _result(total, unresolved=0, checker="skipped", functions=None, statements=N
                 "unresolved": unresolved,
                 "total": total,
             },
-            "assistant": {"status": "none", "drafted": []},
             "checker": {"status": checker},
         },
         "functions": functions or [],
@@ -56,23 +52,23 @@ class TestScoreMix(unittest.TestCase):
         self.assertEqual(result["total_lines"], 10)
         self.assertAlmostEqual(result["score"], 80.0)
 
-    def test_assistant_weighted_at_confidence(self):
+    def test_custom_source_weighted_at_given_weight(self):
         result = score_mix(
             [
                 {"source": "rulebook", "lines": 8, "weight": 1.0},
-                {"source": "assistant", "lines": 4, "weight": 0.5},
+                {"source": "custom", "lines": 4, "weight": 0.5},
             ]
         )
         self.assertEqual(result["total_lines"], 12)
         self.assertAlmostEqual(result["weighted_lines"], 10.0)
         self.assertAlmostEqual(result["score"], 83.33, places=2)
         self.assertAlmostEqual(result["breakdown"]["rulebook"], 8.0)
-        self.assertAlmostEqual(result["breakdown"]["assistant"], 2.0)
+        self.assertAlmostEqual(result["breakdown"]["custom"], 2.0)
 
     def test_verified_weights_full(self):
         result = score_mix(
             [
-                {"source": "assistant", "lines": 6, "weight": 0.3},
+                {"source": "custom", "lines": 6, "weight": 0.3},
                 {"source": "verified", "lines": 6, "weight": 1.0},
             ]
         )
@@ -86,11 +82,11 @@ class TestScoreMix(unittest.TestCase):
 
     def test_weight_clamped_to_unit_interval(self):
         result = score_mix(
-            [{"source": "assistant", "lines": 4, "weight": 2.5}]
+            [{"source": "custom", "lines": 4, "weight": 2.5}]
         )
         self.assertAlmostEqual(result["score"], 100.0)
         result = score_mix(
-            [{"source": "assistant", "lines": 4, "weight": -1.0}]
+            [{"source": "custom", "lines": 4, "weight": -1.0}]
         )
         self.assertEqual(result["score"], 0.0)
 
@@ -108,32 +104,16 @@ class TestAccuracy(unittest.TestCase):
         self.assertEqual(result["breakdown"]["rulebook"], 8.0)
         self.assertEqual(result["breakdown"]["unresolved"], 0.0)
 
-    def test_drafted_function_weighted_by_confidence(self):
+    def test_two_functions_fully_resolved_scores_100(self):
         result = accuracy(
             _result(
                 total=12,
-                functions=[_func("f", 8), _func("g", 4, confidence=0.5)],
+                functions=[_func("f", 8), _func("g", 4)],
             )
         )
         self.assertEqual(result["total_lines"], 12)
-        self.assertAlmostEqual(result["score"], 83.33, places=2)
-        self.assertAlmostEqual(result["breakdown"]["rulebook"], 8.0)
-        self.assertAlmostEqual(result["breakdown"]["assistant"], 2.0)
-
-    def test_drafted_with_low_confidence_scores_low(self):
-        result = accuracy(_result(total=4, functions=[_func("g", 4, confidence=0.25)]))
-        self.assertEqual(result["score"], 25.0)
-
-    def test_verified_overrides_drafted_weight(self):
-        result = accuracy(
-            _result(
-                total=6,
-                checker="verified",
-                functions=[_func("g", 6, confidence=0.4)],
-            )
-        )
-        self.assertEqual(result["score"], 100.0)
-        self.assertEqual(result["breakdown"], {"verified": 6.0})
+        self.assertAlmostEqual(result["score"], 100.0)
+        self.assertAlmostEqual(result["breakdown"]["rulebook"], 12.0)
 
     def test_missing_sections_scores_zero(self):
         result = accuracy({})
@@ -188,7 +168,7 @@ class TestAccuracy(unittest.TestCase):
         self.assertEqual(scored["breakdown"]["rulebook"], 2.0)
         self.assertEqual(scored["breakdown"]["unresolved"], 0.0)
 
-    def test_broken_line_in_drafted_function_still_unresolved(self):
+    def test_broken_line_in_function_still_unresolved(self):
         statements = [
             {"kind": "assignment", "source": "a = 1;", "python": "a = 1"},
             {"kind": "assignment", "source": "c = (;", "python": "c = ("},
@@ -198,11 +178,10 @@ class TestAccuracy(unittest.TestCase):
             "parameters": [],
             "outputs": [],
             "statements": statements,
-            "draft": {"code": "draft", "confidence": 1.0, "notes": []},
         }
         scored = accuracy(_result(total=2, functions=[func]))
         self.assertEqual(scored["score"], 50.0)
-        self.assertEqual(scored["breakdown"]["assistant"], 1.0)
+        self.assertEqual(scored["breakdown"]["rulebook"], 1.0)
         self.assertIn("unresolved", scored["breakdown"])
         self.assertEqual(scored["breakdown"]["unresolved"], 0.0)
 
@@ -255,7 +234,7 @@ class TestAccuracy(unittest.TestCase):
         self.assertEqual(scored["breakdown"], {"failed": 0.0})
 
     def test_verified_numeric_verdict_reports_method(self):
-        func = _func("f", 3, confidence=0.4)
+        func = _func("f", 3)
         result = _result(total=3, checker="verified", functions=[func])
         scored = accuracy(result)
         self.assertEqual(scored["score"], 100.0)
@@ -300,24 +279,12 @@ class TestAccuracyIntegration(unittest.TestCase):
         self.assertEqual(result["sections"]["rulebook"]["unresolved"], 0)
         self.assertEqual(accuracy(result)["score"], 100.0)
 
-    @mock.patch("assistant.draft_translation._call_ollama", return_value="""CODE
-def beamform_basic(N, d, lamb, theta, theta0):
-    return np.zeros_like(theta)
-END CODE
-CONFIDENCE
-0.5
-END CONFIDENCE
-UNSURE
-none
-END UNSURE
-""")
-    def test_reverse_drafted_function_weighted(self, mock_call):
+    def test_reverse_unresolved_function_scores_below_100(self):
         result = translate_file(
             sample_python("beamform_basic_py.py"), direction=PYTHON_TO_MATLAB
         )
         scored = accuracy(result)
         self.assertGreater(result["sections"]["rulebook"]["unresolved"], 0)
-        self.assertIn("assistant", scored["breakdown"])
         self.assertLess(scored["score"], 100.0)
 
 

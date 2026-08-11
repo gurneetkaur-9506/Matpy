@@ -14,12 +14,10 @@ The score is based on real correctness, not merely on rule matching:
                           weight (1.0);
            "failed"    -> the numeric comparison found disagreement, so
                           every resolved line earns weight 0.0.
-       Without a conclusive numeric verdict the score falls back to
-       provenance weights:
-           rulebook-resolved lines ......... 1.0  (fully resolved by rules)
-           assistant-drafted lines ......... the Assistant's confidence
-                                              (0.0-1.0)
-           unresolved lines ................ 0.0  (needs human review)
+        Without a conclusive numeric verdict the score falls back to
+        provenance weights:
+            rulebook-resolved lines ......... 1.0  (fully resolved by rules)
+            unresolved lines ................ 0.0  (needs human review)
 
 The score is a single number in 0-100 percent.  The result also reports the
 weighted line contribution of each source (``breakdown``) and the ``method``
@@ -130,7 +128,6 @@ def score_mix(items, method=None):
     Args:
         items: List of {"source": str, "lines": int, "weight": float}.
             "lines" is the number of translated lines with that provenance.
-            "weight" is the confidence weight; only consulted for "assistant".
         method: Optional description of how the score was produced.  When
             omitted, it is derived from the sources present ("verified" or
             "failed" numeric verdicts, otherwise "rulebook").
@@ -217,20 +214,6 @@ def accuracy(result):
             # The numeric comparison against real output disagreed, so even
             # rules that matched cannot be trusted.
             items.append({"source": "failed", "lines": count, "weight": 0.0})
-        elif func.get("draft"):
-            resolved = count - unresolved
-            if resolved:
-                items.append(
-                    {
-                        "source": "assistant",
-                        "lines": resolved,
-                        "weight": float(func["draft"].get("confidence", 0.0)),
-                    }
-                )
-            if unresolved:
-                items.append(
-                    {"source": "unresolved", "lines": unresolved, "weight": 0.0}
-                )
         else:
             resolved = count - unresolved
             if resolved:

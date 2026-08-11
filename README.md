@@ -1,7 +1,7 @@
 # MATPY Translator
 
 An architecture for translating MATLAB code to Python (and back). The system
-is built from five cooperating blocks and is fully offline at runtime.
+is built from four cooperating blocks and is fully offline at runtime.
 
 ## Features
 
@@ -25,8 +25,7 @@ is built from five cooperating blocks and is fully offline at runtime.
 - Python 3.8+
 - Runtime dependencies: `tree-sitter`, `tree-sitter-matlab`, `numpy`, `scipy`
 - UI only: `PyQt5`
-- Optional: a local Ollama server (`localhost:11434`) to draft translations of
-  unresolved functions, and a MATLAB engine for conclusive numeric checks
+- Optional: a MATLAB engine for conclusive numeric checks
 
 Install the core dependencies:
 
@@ -62,7 +61,7 @@ result = translate_source("import numpy as np\nx = np.arange(10)", direction=PYT
 
 Each result contains the generated code (`python` or `matlab`), the extracted
 `functions`, and a `sections` dict reporting the status of each pipeline stage
-(`reader`, `rulebook`, `assistant`, `checker`).
+(`reader`, `rulebook`, `checker`).
 
 ### Desktop UI
 
@@ -83,9 +82,8 @@ A PyInstaller spec is included for building a standalone executable:
 pyinstaller matpy.spec
 ```
 
-The bundle (`dist/matpy`) is fully offline; the only optional network call is
-the loopback Ollama draft path. See `docs/runtime_dependencies.md` for the
-audit.
+The bundle (`dist/matpy`) is fully offline. See `docs/runtime_dependencies.md`
+for the audit.
 
 ## Architecture
 
@@ -113,27 +111,16 @@ The Specialist Library is a collection of small, focused translation modules,
 each expert in one domain such as matrix operations, signal processing, or
 plotting. Specialists implement the trickier one-to-many conversions that a
 single rule cannot express, producing Python that relies on numpy and scipy
-idioms. They register with the Rulebook so that the Assistant can invoke them
-when the matched pattern falls into their specialty.
-
-### Assistant
-
-The Assistant is the orchestrator. It walks the intermediate representation
-produced by the Reader, applies matching rules and invokes the appropriate
-Specialists, and assembles the final Python output. It tracks context such as
-variable types and scope to keep the translation consistent across function
-boundaries and to report warnings or unresolved constructs. When a function
-contains unresolved statements, it can request a draft from a local Ollama
-server, attaching a confidence score and uncertainty notes to the result.
+idioms. They register with the Rulebook so they can be invoked when a matched
+pattern falls into their specialty.
 
 ### Checker
 
 The Checker validates the generated Python before it is accepted. It
 re-parses the output, performs structural and semantic checks, and optionally
 cross-checks numeric behavior against the original MATLAB for supported
-constructs. Findings are fed back to the Assistant to refine the translation,
-closing the loop until the output is clean or the remaining issues are
-reported to the user.
+constructs. Findings are reported to the user when a function or line could
+not be resolved.
 
 ## Accuracy Scoring
 
@@ -148,8 +135,7 @@ The accuracy score reflects real correctness, not merely how many rules matched:
    `failed` verdict zeroes the resolved lines (0.0), even if rules matched.
 3. **Fallback to provenance weights.** Without a conclusive numeric verdict
    (no MATLAB engine, no inputs, or an inconclusive result), resolved lines
-   are weighted by source: rulebook lines 1.0, Assistant drafts by their
-   reported confidence, unresolved lines 0.0.
+   are weighted by source: rulebook lines 1.0, unresolved lines 0.0.
 
 The score is a percentage in 0-100. Each result reports the weighted
 contribution per source (`breakdown`) and the `method` that produced the
@@ -196,7 +182,6 @@ On Linux, replace the `DISPLAY` value with your own (e.g. `:0`) and add `-v /tmp
 reader/           Parse MATLAB/Python into a structured IR (tree-sitter)
 rulebook/         Declarative translation rules and the statement translator
 specialist_lib/   Domain specialists (array_factor, beamform, awgn, ...)
-assistant/        Orchestration and unresolved-function drafting
 checker/          Validation and numeric cross-checking
 ui/               PyQt5 translator window
 reference_set/    Paired MATLAB/Python validation examples
@@ -205,7 +190,7 @@ sample_matlab_real/  Larger, real-world MATLAB sources
 sample_python/    Example Python outputs
 docs/             Design and dependency documentation
 tests/            Pytest suite
-translator.py     Top-level pipeline (Reader -> Rulebook -> Assistant -> Checker)
+translator.py     Top-level pipeline (Reader -> Rulebook -> Checker)
 run_translation.py  CLI entry point
 reference_store.py  Reference-set writer
 repo_paths.py     Central path helpers
@@ -221,5 +206,5 @@ python -m pytest tests/
 ```
 
 The suite covers translation rules (forward and reverse), indexing, operators,
-specialists, the checker, and pipeline resilience. Tests mock the Ollama call,
-so no local server is required.
+specialists, the checker, and pipeline resilience. It runs fully offline with
+no external server required.

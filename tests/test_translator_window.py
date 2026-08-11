@@ -15,20 +15,6 @@ from ui.translator_window import TranslatorWindow
 FFT_MATLAB = sample_matlab("fft_basic.m")
 INDEXING_PYTHON = sample_python("indexing_ops_py.py")
 
-FAKE_RESPONSE = """CODE
-import numpy as np
-
-def f(x):
-    return np.sum(x)
-END CODE
-CONFIDENCE
-0.6
-END CONFIDENCE
-UNSURE
-- assumed x is 1-D
-END UNSURE
-"""
-
 
 class TestTranslatorWindow(unittest.TestCase):
     @classmethod
@@ -75,8 +61,6 @@ class TestTranslatorWindow(unittest.TestCase):
         self.assertIn("Reader: ok", win.section_labels["reader"].text())
         self.assertIn("#2ecc71", win.section_labels["reader"].styleSheet())
         self.assertIn("Rulebook: ok", win.section_labels["rulebook"].text())
-        self.assertIn("Assistant: none", win.section_labels["assistant"].text())
-        self.assertIn("#2ecc71", win.section_labels["assistant"].styleSheet())
         self.assertIn(
             "Checker: inconclusive_no_matlab",
             win.section_labels["checker"].text(),
@@ -146,15 +130,10 @@ class TestTranslatorWindow(unittest.TestCase):
         win.close()
 
     def test_highlighter_marks_problem_lines_after_translate(self):
-        from unittest import mock
-
         win = TranslatorWindow(matlab_path=sample_python("beamform_basic_py.py"))
         reverse_index = win.direction_combo.findData(PYTHON_TO_MATLAB)
         win.direction_combo.setCurrentIndex(reverse_index)
-        with mock.patch(
-            "assistant.draft_translation._call_ollama", return_value=FAKE_RESPONSE
-        ):
-            win.translate_button.click()
+        win.translate_button.click()
         self.assertTrue(win.python_highlighter._problem_lines)
         win.close()
 
@@ -278,16 +257,11 @@ class TestSummaryLineFunction(unittest.TestCase):
         self.assertTrue(text.endswith("."))
 
     def test_unresolved_file_reports_review_count(self):
-        from unittest import mock
-
         from translator import translate_file
 
-        with mock.patch(
-            "assistant.draft_translation._call_ollama", return_value=FAKE_RESPONSE
-        ):
-            result = translate_file(
-                sample_python("beamform_basic_py.py"), direction=PYTHON_TO_MATLAB
-            )
+        result = translate_file(
+            sample_python("beamform_basic_py.py"), direction=PYTHON_TO_MATLAB
+        )
         text = summary_line(result)
         self.assertIn("need review", text)
         self.assertNotIn("accuracy 100%", text)
@@ -360,15 +334,10 @@ class TestReportPanel(unittest.TestCase):
         win.close()
 
     def test_report_populated_after_translate_with_issues(self):
-        from unittest import mock
-
         win = TranslatorWindow(matlab_path=sample_python("beamform_basic_py.py"))
         reverse_index = win.direction_combo.findData(PYTHON_TO_MATLAB)
         win.direction_combo.setCurrentIndex(reverse_index)
-        with mock.patch(
-            "assistant.draft_translation._call_ollama", return_value=FAKE_RESPONSE
-        ):
-            win.translate_button.click()
+        win.translate_button.click()
         text = win.report_pane.toPlainText()
         self.assertIn("Line", text)
         self.assertIn("return af", text)

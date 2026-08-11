@@ -6,7 +6,6 @@ of dicts, one per issue:
 
     * rulebook lines that were left UNRESOLVED,
     * rulebook lines whose generated Python does not parse (syntax errors),
-    * Assistant drafts that failed or were flagged with low confidence,
     * Checker verdicts of "failed", "review needed", or
       "inconclusive_no_matlab".
 
@@ -21,8 +20,6 @@ from reader import PYTHON_TO_MATLAB
 from rulebook import UNRESOLVED
 
 from .accuracy import syntax_error
-
-LOW_CONFIDENCE = 0.5
 
 _KIND_NORMALIZE = {
     "Assign": "assignment",
@@ -63,17 +60,6 @@ def _locate(source, source_lines):
         return None
     for index, line in enumerate(source_lines):
         if first in line:
-            return index + 1
-    return None
-
-
-def _locate_function(func, source_lines):
-    name = func.get("name")
-    if not name or not source_lines:
-        return None
-    pattern = re.compile(r"\b(function|def)\b.*\b%s\b" % re.escape(name))
-    for index, line in enumerate(source_lines):
-        if pattern.search(line.strip()):
             return index + 1
     return None
 
@@ -162,63 +148,6 @@ def _unresolved_entry(stmt, source_lines):
     }
 
 
-def _plain_reason(error):
-    """Return a single plain-language line for an error string."""
-    if not error:
-        return "The Assistant failed before returning a draft."
-    for line in str(error).splitlines():
-        if line.strip():
-            return line.strip()
-    return "The Assistant failed before returning a draft."
-
-
-def _assistant_entries(result, source_lines):
-    entries = []
-    for func in result.get("functions") or []:
-        if func.get("draft_error") is not None:
-            entries.append(
-                {
-                    "line": _locate_function(func, source_lines),
-                    "source": func.get("name") or "",
-                    "issue": "assistant error",
-                    "stage": "assistant",
-                    "attempted": (
-                        "Asked the Assistant to draft a translation of "
-                        "function %r." % func.get("name")
-                    ),
-                    "reason": _plain_reason(func.get("draft_error")),
-                }
-            )
-            continue
-        draft = func.get("draft") or {}
-        confidence = draft.get("confidence")
-        if confidence is None or confidence >= LOW_CONFIDENCE:
-            continue
-        notes = draft.get("notes") or []
-        if notes:
-            reason = " ".join(notes)
-        else:
-            reason = (
-                "The Assistant reported confidence %.2f, below the %.2f "
-                "threshold for accepting a draft without review."
-                % (confidence, LOW_CONFIDENCE)
-            )
-        entries.append(
-            {
-                "line": _locate_function(func, source_lines),
-                "source": func.get("name") or "",
-                "issue": "low confidence",
-                "stage": "assistant",
-                "attempted": (
-                    "Drafted a translation of function %r but flagged it as "
-                    "uncertain." % func.get("name")
-                ),
-                "reason": reason,
-            }
-        )
-    return entries
-
-
 def _syntax_entries(result, source_lines):
     """Flag rulebook lines whose translated Python does not parse.
 
@@ -295,17 +224,16 @@ def build_translation_report(result):
 
     Returns:
         A list of dicts, one per issue, in pipeline order (rulebook
-        unresolved lines first, then Assistant low-confidence flags and
-        failures, then the Checker verdict).  Each dict has the keys:
+        unresolved lines and syntax errors first, then the Checker verdict).
+        Each dict has the keys:
 
             line:      1-based line number in the original source, or None
                        when it cannot be located (e.g. a whole-file verdict).
             source:    the original source text of the problematic line.
-            issue:     "unresolved", "syntax error", "low confidence",
-                       "assistant error", "failed", "review needed", or
-                       "inconclusive_no_matlab".
-            stage:     the pipeline stage that reported it: "rulebook",
-                       "assistant", or "checker".
+            issue:     "unresolved", "syntax error", "failed",
+                       "review needed", or "inconclusive_no_matlab".
+            stage:     the pipeline stage that reported it: "rulebook" or
+                       "checker".
             attempted: what that stage tried to do.
             reason:    a plain-language explanation of why it could not be
                        resolved.  Never a stack trace.
@@ -317,6 +245,5 @@ def build_translation_report(result):
         if _is_unresolved(stmt)
     ]
     report.extend(_syntax_entries(result, source_lines))
-    report.extend(_assistant_entries(result, source_lines))
     report.extend(_checker_entries(result))
     return report

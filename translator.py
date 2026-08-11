@@ -1,10 +1,8 @@
-"""Top-level translation pipeline: Reader -> Rulebook -> Assistant -> Checker."""
+"""Top-level translation pipeline: Reader -> Rulebook -> Checker."""
 
-import inspect
 import os
 import tempfile
 
-from assistant import draft_unresolved_functions
 from checker import verify
 from reader import (
     MATLAB_TO_PYTHON,
@@ -12,19 +10,6 @@ from reader import (
     load_structure_from_source,
 )
 from rulebook import UNRESOLVED, translate_with_rulebook, translate_with_rulebook_reverse
-from specialist_lib import __all__ as SPECIALIST_NAMES
-
-import specialist_lib
-
-
-LOW_CONFIDENCE = 0.5
-
-
-def _specialist_lib_contents():
-    return {
-        name: inspect.getsource(getattr(specialist_lib, name))
-        for name in SPECIALIST_NAMES
-    }
 
 
 def _parse(source, direction):
@@ -85,21 +70,6 @@ def _emit_function(func, lines, problems=None):
     signature = ", ".join(parameters) if parameters else "*args, **kwargs"
     lines.append("def %s(%s):" % (func["name"], signature))
     _emit_block(func["statements"], lines, indent="    ", problems=problems)
-    draft = func.get("draft")
-    if draft:
-        notes = "; ".join(draft["notes"]) if draft["notes"] else "none"
-        lines.append(
-            "    # Assistant draft: confidence=%.2f notes=%s"
-            % (draft["confidence"], notes)
-        )
-        low_confidence = problems is not None and draft["confidence"] < LOW_CONFIDENCE
-        if low_confidence:
-            problems.append(len(lines) - 1)
-        if draft["code"]:
-            for line in draft["code"].splitlines():
-                lines.append("    " + line)
-                if low_confidence:
-                    problems.append(len(lines) - 1)
     outputs = func.get("outputs") or ()
     if outputs:
         if len(outputs) == 1:
@@ -141,21 +111,6 @@ def _emit_function_reverse(func, lines, problems=None):
     else:
         lines.append("%% function %s(*args): signature unresolved" % func["name"])
     _emit_block_reverse(func["statements"], lines, indent="    ", problems=problems)
-    draft = func.get("draft")
-    if draft:
-        notes = "; ".join(draft["notes"]) if draft["notes"] else "none"
-        lines.append(
-            "    %% Assistant draft: confidence=%.2f notes=%s"
-            % (draft["confidence"], notes)
-        )
-        low_confidence = problems is not None and draft["confidence"] < LOW_CONFIDENCE
-        if low_confidence:
-            problems.append(len(lines) - 1)
-        if draft["code"]:
-            for line in draft["code"].splitlines():
-                lines.append("    " + line)
-                if low_confidence:
-                    problems.append(len(lines) - 1)
 
 
 def code_for_result_reverse(result, problems=None):
@@ -255,18 +210,8 @@ def translate_source(
     if unresolved_count:
         result["status"] = "unresolved"
 
-    draft_unresolved_functions(
-        rulebook_result, _specialist_lib_contents(), direction=direction
-    )
-    drafted = [f["name"] for f in rulebook_result["functions"] if "draft" in f]
-    errored = [f["name"] for f in rulebook_result["functions"] if "draft_error" in f]
     result["functions"] = rulebook_result["functions"]
     result["statements"] = rulebook_result["statements"]
-    result["sections"]["assistant"] = {
-        "status": "drafted" if drafted else "errored" if errored else "none",
-        "drafted": drafted,
-        "errors": errored,
-    }
 
     problems = []
     result["python"] = (
