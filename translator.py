@@ -79,8 +79,34 @@ def _emit_function(func, lines, problems=None):
             lines.append("    return (%s)" % ", ".join(outputs))
 
 
+def _code_references(statements, functions, token):
+    """True when any emitted Python line references ``token``.
+
+    Walks the script statements and every function body, including nested
+    loop bodies, checking each statement's emitted ``python`` text so the
+    top-of-file header can import exactly the modules the generated code
+    needs (scipy.signal / specialist_lib).
+    """
+    def walk(stmts):
+        for stmt in stmts:
+            if token in (stmt.get("python") or ""):
+                return True
+            if stmt.get("kind") == "loop" and walk(stmt.get("body") or []):
+                return True
+        return False
+
+    if walk(statements):
+        return True
+    return any(walk(f.get("statements") or []) for f in functions)
+
+
 def code_for_result(result, problems=None):
-    lines = ["import numpy as np", ""]
+    imports = ["import numpy as np"]
+    if _code_references(result["statements"], result["functions"], "scipy.signal"):
+        imports.append("import scipy.signal")
+    if _code_references(result["statements"], result["functions"], "specialist_lib."):
+        imports.append("import specialist_lib")
+    lines = imports + [""]
     _emit_block(result["statements"], lines, problems=problems)
     for func in result["functions"]:
         _emit_function(func, lines, problems=problems)
@@ -260,6 +286,13 @@ def translate_source(
             "warnings": validation_warnings,
             "counts": counts,
         }
+
+    if reverse:
+        result["sections"]["symbolic"] = {"status": "skipped", "insights": []}
+    else:
+        from rulebook.symbolic import analyze_translation
+
+        result["sections"]["symbolic"] = analyze_translation(result)
 
     if not inputs:
         if matlab_engine_available():

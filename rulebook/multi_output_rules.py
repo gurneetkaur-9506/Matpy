@@ -35,6 +35,9 @@ _STRING_LITERAL_RE = re.compile(r"^'(?:[^']|'')*'$")
 #     are not supported).
 #   - "shape": outputs are the dimensions of the single array argument.
 #   - "where": outputs are the index arrays of a single condition.
+#   - "tuple": outputs come from a single Python call that returns them in
+#     MATLAB's order (e.g. scipy.signal.butter -> (b, a)); the target list
+#     is unpacked directly, with '~' discards via positional indexing.
 MULTI_OUTPUT_RULES = {
     "max": {
         "kind": "pair",
@@ -57,6 +60,11 @@ MULTI_OUTPUT_RULES = {
     "size": {"kind": "shape"},
     "find": {"kind": "where"},
     "meshgrid": {"kind": "meshgrid"},
+    "butter": {"kind": "tuple", "call": "scipy.signal.butter"},
+    "filter": {"kind": "tuple", "call": "specialist_lib.filter_with_state"},
+    "findpeaks": {"kind": "tuple", "call": "specialist_lib.findpeaks"},
+    "freqz": {"kind": "tuple", "call": "specialist_lib.freqz"},
+    "xcorr": {"kind": "tuple", "call": "specialist_lib.xcorr"},
 }
 
 # Reduction functions that map 1:1 onto numpy calls.  They are the single
@@ -283,6 +291,26 @@ def _translate_meshgrid(targets, args, translate_arg):
     return ["%s = %s" % (", ".join(targets), call)]
 
 
+def _translate_tuple(targets, args, translate_arg, rule):
+    """Translate ``[a, b] = func(...)`` where a single Python call returns
+    the outputs in MATLAB's order (e.g. ``scipy.signal.butter`` returns
+    ``(b, a)``).  The target list unpacks the call directly; a ``~``
+    discard keeps its positional slot via indexing."""
+    if not args:
+        return None
+    translated = [translate_arg(a.strip()) for a in args]
+    if any(t == UNRESOLVED for t in translated):
+        return None
+    call = "%s(%s)" % (rule["call"], ", ".join(translated))
+    if any(t == "~" for t in targets):
+        lines = []
+        for i, t in enumerate(targets):
+            if t != "~":
+                lines.append("%s = %s[%d]" % (t, call, i))
+        return lines if lines else None
+    return ["%s = %s" % (", ".join(targets), call)]
+
+
 def translate_multi_output_assignment(target_text, value_expr, translate_arg):
     """Return the Python decomposition of ``[a, b] = func(...)`` as a list
     of lines, or ``None`` when the pattern is not recognized.
@@ -318,4 +346,6 @@ def translate_multi_output_assignment(target_text, value_expr, translate_arg):
         return _translate_where(targets, args, translate_arg)
     if kind == "meshgrid":
         return _translate_meshgrid(targets, args, translate_arg)
+    if kind == "tuple":
+        return _translate_tuple(targets, args, translate_arg, rule)
     return None

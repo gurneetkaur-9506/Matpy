@@ -67,6 +67,7 @@ MATLAB_BUILTIN_CALLS = frozenset(
         "exp",
         "fft",
         "figure",
+        "filter",
         "find",
         "grid",
         "ifft",

@@ -318,5 +318,86 @@ def test_specialist_nested_arguments_translate(matlab, expected):
     assert apply_builtin_rule(matlab) == expected
 
 
+@pytest.mark.parametrize(
+    "matlab,expected",
+    [
+        # Normal (positional) arguments.
+        ("butter(4, 0.2)", "scipy.signal.butter(4, 0.2)"),
+        ("butter(6, [0.2, 0.5], 'bandpass')", "scipy.signal.butter(6, [0.2, 0.5], 'bandpass')"),
+        ("filter(b, a, x)", "scipy.signal.lfilter(b, a, x)"),
+        ("filtfilt(b, a, x)", "scipy.signal.filtfilt(b, a, x)"),
+        ("freqz(b, a, 256)", "specialist_lib.freqz(b, a, 256)"),
+        ("detrend(x)", "specialist_lib.detrend(x)"),
+        ("sawtooth(t, 0.5)", "scipy.signal.sawtooth(t, 0.5)"),
+        ("square(t, 25)", "specialist_lib.square(t, 25)"),
+        ("conv2(A, B)", "scipy.signal.convolve2d(A, B)"),
+        ("decimate(x, 4)", "scipy.signal.decimate(x, 4)"),
+        ("resample(x, 3, 2)", "scipy.signal.resample_poly(x, 3, 2)"),
+        ("medfilt1(x, 5)", "specialist_lib.medfilt1(x, 5)"),
+        ("hamming(64)", "scipy.signal.windows.hamming(64)"),
+        ("blackman(64)", "scipy.signal.windows.blackman(64)"),
+        ("kaiser(64, 5)", "scipy.signal.windows.kaiser(64, 5)"),
+    ],
+)
+def test_scipy_signal_builtin_rules(matlab, expected):
+    """MATLAB DSP/toolbox calls map onto their scipy.signal equivalents."""
+    assert apply_builtin_rule(matlab) == expected
+
+
+@pytest.mark.parametrize(
+    "matlab,expected",
+    [
+        # Option/name-value arguments after the positional ones stay put.
+        ("conv2(A, B, 'same')", "scipy.signal.convolve2d(A, B, 'same')"),
+        ("conv2(A, B, 'valid')", "scipy.signal.convolve2d(A, B, 'valid')"),
+        ("detrend(x, 'linear')", "specialist_lib.detrend(x, 'linear')"),
+        ("detrend(x, 'linear', 3)", "specialist_lib.detrend(x, 'linear', 3)"),
+        ("square(t, 75)", "specialist_lib.square(t, 75)"),
+        ("medfilt1(x)", "specialist_lib.medfilt1(x)"),
+        ("sawtooth(t)", "scipy.signal.sawtooth(t)"),
+        ("kaiser(N, beta)", "scipy.signal.windows.kaiser(N, beta)"),
+    ],
+)
+def test_scipy_signal_option_arguments_passthrough(matlab, expected):
+    assert apply_builtin_rule(matlab) == expected
+
+
+@pytest.mark.parametrize(
+    "matlab,expected",
+    [
+        # Nested arguments inside DSP calls translate recursively.
+        ("butter(4, 2 * pi * fc / fs)", "scipy.signal.butter(4, 2 * pi * fc / fs)"),
+        ("filter(butter(2, 0.3), x)", "scipy.signal.lfilter(scipy.signal.butter(2, 0.3), x)"),
+        ("conv2(conv2(A, B), C)", "scipy.signal.convolve2d(scipy.signal.convolve2d(A, B), C)"),
+        ("hamming(2 * N)", "scipy.signal.windows.hamming(2 * N)"),
+        ("square(chirp(t, 0, 1, 10), 50)", "specialist_lib.square(specialist_lib.chirp(t, 0, 1, 10), 50)"),
+        ("filtfilt(b, a, awgn(x, 10))", "scipy.signal.filtfilt(b, a, specialist_lib.awgn(x, 10))"),
+    ],
+)
+def test_scipy_signal_nested_arguments_translate(matlab, expected):
+    assert apply_builtin_rule(matlab) == expected
+
+
+@pytest.mark.parametrize(
+    "matlab,expected",
+    [
+        ("[b, a] = butter(4, 0.2)", "b, a = scipy.signal.butter(4, 0.2)"),
+        ("[y, zf] = filter(b, a, x)", "y, zf = specialist_lib.filter_with_state(b, a, x)"),
+        ("[pks, locs] = findpeaks(x)", "pks, locs = specialist_lib.findpeaks(x)"),
+        ("[r, lags] = xcorr(x, y)", "r, lags = specialist_lib.xcorr(x, y)"),
+        ("[h, w] = freqz(b, a, 256)", "h, w = specialist_lib.freqz(b, a, 256)"),
+        ("[~, a] = butter(4, 0.2)", "a = scipy.signal.butter(4, 0.2)[1]"),
+    ],
+)
+def test_scipy_signal_multi_output(matlab, expected):
+    from rulebook.multi_output_rules import translate_multi_output_assignment
+
+    lines = translate_multi_output_assignment(
+        matlab.split("=")[0].strip(), matlab.split("=")[1].strip(), lambda a: a
+    )
+    assert lines is not None
+    assert lines[0] == expected
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -4,6 +4,15 @@ from .beamform import beamform
 from .chirp import chirp
 from .conv import conv
 from .read_scan_file import format_spec_to_columns, read_matlab_scan_file
+from .signal_tools import (
+    detrend,
+    filter_with_state,
+    findpeaks,
+    freqz,
+    medfilt1,
+    square,
+    xcorr,
+)
 from .steering_vector import steering_vector
 
 __all__ = [
@@ -12,7 +21,14 @@ __all__ = [
     "beamform",
     "chirp",
     "conv",
+    "detrend",
+    "filter_with_state",
+    "findpeaks",
     "format_spec_to_columns",
+    "freqz",
+    "medfilt1",
     "read_matlab_scan_file",
+    "square",
     "steering_vector",
+    "xcorr",
 ]
