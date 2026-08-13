@@ -10,6 +10,7 @@ from .run_matlab_real import (
     start_matlab_engine,
 )
 from .run_python import run_python
+from .validate import validate_translation
 from .verify import verify
 
 __all__ = [
@@ -24,5 +25,6 @@ __all__ = [
     "close_matlab_engine",
     "matlab_engine_session",
     "run_python",
+    "validate_translation",
     "verify",
 ]

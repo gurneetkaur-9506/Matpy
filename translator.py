@@ -5,6 +5,7 @@ import tempfile
 
 from checker import verify
 from checker.run_matlab_real import matlab_engine_available as _engine_probe
+from checker.validate import validate_translation
 from reader import (
     MATLAB_TO_PYTHON,
     PYTHON_TO_MATLAB,
@@ -245,6 +246,20 @@ def translate_source(
         else code_for_result(rulebook_result, problems=problems)
     )
     result["problems"] = problems
+
+    if reverse:
+        result["sections"]["validation"] = {"status": "skipped", "warnings": []}
+    else:
+        validation_warnings = validate_translation(result)
+        counts = {}
+        for warning in validation_warnings:
+            category = warning["category"]
+            counts[category] = counts.get(category, 0) + 1
+        result["sections"]["validation"] = {
+            "status": "ok",
+            "warnings": validation_warnings,
+            "counts": counts,
+        }
 
     if not inputs:
         if matlab_engine_available():

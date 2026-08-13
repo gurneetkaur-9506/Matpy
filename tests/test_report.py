@@ -213,6 +213,114 @@ class TestLineNumbers(unittest.TestCase):
         self.assertIsNone(build_translation_report(result)[0]["line"])
 
 
+class TestValidationEntries(unittest.TestCase):
+    def test_validation_warning_flattened(self):
+        result = _result()
+        result["sections"]["validation"] = {
+            "status": "ok",
+            "warnings": [
+                {
+                    "line": 3,
+                    "source": "y = smoothdata(x)",
+                    "stage": "validation",
+                    "category": "unresolved_function",
+                    "confidence": "HIGH",
+                    "message": "function 'smoothdata' is not recognized by the rulebook and was passed through",
+                }
+            ],
+        }
+        report = build_translation_report(result)
+        self.assertEqual(len(report), 1)
+        entry = report[0]
+        self.assertEqual(entry["issue"], "unresolved function")
+        self.assertEqual(entry["stage"], "validation")
+        self.assertEqual(entry["line"], 3)
+        self.assertEqual(entry["source"], "y = smoothdata(x)")
+        self.assertTrue(entry["attempted"])
+        self.assertTrue(entry["reason"])
+        self.assertNotIn("Traceback", entry["reason"])
+
+    def test_validation_warning_maps_each_category(self):
+        categories = [
+            ("undefined_variable", "undefined variable"),
+            ("unsupported_construct", "unsupported construct"),
+            ("suspicious_operator", "suspicious operator"),
+            ("unresolved_function", "unresolved function"),
+            ("unsafe_translation", "unsafe translation"),
+        ]
+        for category, issue in categories:
+            result = _result()
+            result["sections"]["validation"] = {
+                "status": "ok",
+                "warnings": [
+                    {
+                        "line": 1,
+                        "source": "x = 1",
+                        "stage": "validation",
+                        "category": category,
+                        "confidence": "HIGH",
+                        "message": "detail",
+                    }
+                ],
+            }
+            self.assertEqual(
+                build_translation_report(result)[0]["issue"], issue, category
+            )
+
+    def test_no_validation_section_returns_empty(self):
+        result = _result()
+        self.assertEqual(build_translation_report(result), [])
+
+    def test_empty_validation_warnings_returns_empty(self):
+        result = _result()
+        result["sections"]["validation"] = {
+            "status": "ok",
+            "warnings": [],
+            "counts": {},
+        }
+        self.assertEqual(build_translation_report(result), [])
+
+    def test_validation_entries_in_pipeline_order(self):
+        unresolved = _stmt("assignment", "x = fft(y)")
+        result = _result(
+            statements=[unresolved],
+            checker="inconclusive_no_matlab",
+        )
+        result["sections"]["validation"] = {
+            "status": "ok",
+            "warnings": [
+                {
+                    "line": 1,
+                    "source": "x = fft(y)",
+                    "stage": "validation",
+                    "category": "undefined_variable",
+                    "confidence": "HIGH",
+                    "message": "detail",
+                }
+            ],
+        }
+        report = build_translation_report(result)
+        stages = [e["stage"] for e in report]
+        self.assertEqual(
+            stages, ["rulebook", "validation", "checker"]
+        )
+
+    def test_validation_skipped_in_reverse_direction(self):
+        result = {
+            "file": None,
+            "direction": "python_to_matlab",
+            "status": "ok",
+            "python": "",
+            "functions": [],
+            "statements": [],
+            "sections": {
+                "checker": {"status": "skipped"},
+                "validation": {"status": "skipped", "warnings": []},
+            },
+        }
+        self.assertEqual(build_translation_report(result), [])
+
+
 class TestCheckerVerdicts(unittest.TestCase):
     def test_failed_verdict_reported(self):
         result = _result(checker="failed")

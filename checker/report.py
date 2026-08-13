@@ -6,6 +6,7 @@ of dicts, one per issue:
 
     * rulebook lines that were left UNRESOLVED,
     * rulebook lines whose generated Python does not parse (syntax errors),
+    * static-validation warnings from the new validation stage,
     * Checker verdicts of "failed", "review needed", or
       "inconclusive_no_matlab".
 
@@ -179,6 +180,43 @@ def _syntax_entries(result, source_lines):
     return entries
 
 
+_VALIDATION_ISSUE = {
+    "undefined_variable": "undefined variable",
+    "unsupported_construct": "unsupported construct",
+    "suspicious_operator": "suspicious operator",
+    "unresolved_function": "unresolved function",
+    "unsafe_translation": "unsafe translation",
+}
+
+
+def _validation_entries(result):
+    """Turn static-validation warnings into report entries.
+
+    The validation stage only runs for MATLAB -> Python output; in the
+    reverse direction its section is marked "skipped" and produces nothing.
+    """
+    if result.get("direction") == PYTHON_TO_MATLAB:
+        return []
+    validation = (result.get("sections") or {}).get("validation") or {}
+    entries = []
+    for warning in validation.get("warnings") or []:
+        category = warning.get("category")
+        entries.append(
+            {
+                "line": warning.get("line"),
+                "source": warning.get("source") or "",
+                "issue": _VALIDATION_ISSUE.get(category, category),
+                "stage": "validation",
+                "attempted": (
+                    "Statically reviewed the translated line against the "
+                    "rulebook tables and Python builtins."
+                ),
+                "reason": warning.get("message") or "",
+            }
+        )
+    return entries
+
+
 def _checker_entries(result):
     checker = (result.get("sections") or {}).get("checker") or {}
     status = checker.get("status")
@@ -226,16 +264,20 @@ def build_translation_report(result):
 
     Returns:
         A list of dicts, one per issue, in pipeline order (rulebook
-        unresolved lines and syntax errors first, then the Checker verdict).
+        unresolved lines and syntax errors first, then static-validation
+        warnings, then the Checker verdict).
         Each dict has the keys:
 
             line:      1-based line number in the original source, or None
                        when it cannot be located (e.g. a whole-file verdict).
             source:    the original source text of the problematic line.
-            issue:     "unresolved", "syntax error", "failed",
-                       "review needed", or "inconclusive_no_matlab".
-            stage:     the pipeline stage that reported it: "rulebook" or
-                       "checker".
+            issue:     "unresolved", "syntax error", "undefined variable",
+                       "unsupported construct", "suspicious operator",
+                       "unresolved function", "unsafe translation",
+                       "failed", "review needed", or
+                       "inconclusive_no_matlab".
+            stage:     the pipeline stage that reported it: "rulebook",
+                       "validation", or "checker".
             attempted: what that stage tried to do.
             reason:    a plain-language explanation of why it could not be
                        resolved.  Never a stack trace.
@@ -247,5 +289,6 @@ def build_translation_report(result):
         if _is_unresolved(stmt)
     ]
     report.extend(_syntax_entries(result, source_lines))
+    report.extend(_validation_entries(result))
     report.extend(_checker_entries(result))
     return report
