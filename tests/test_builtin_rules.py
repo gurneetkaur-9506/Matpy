@@ -107,5 +107,83 @@ class TestApplyBuiltinRule(unittest.TestCase):
         self.assertEqual(apply_builtin_rule("x"), "x")
 
 
+class TestSpecialistBuiltinRules(unittest.TestCase):
+    """MATLAB toolbox calls wired to specialist_lib functions via the
+    Rulebook's builtin table.  Each must translate to a specialist_lib
+    call, never to a numpy/scipy substitute."""
+
+    def test_chirp(self):
+        self.assertEqual(
+            apply_builtin_rule("chirp(t, 0, 1, 100)"),
+            "specialist_lib.chirp(t, 0, 1, 100)",
+        )
+        self.assertEqual(
+            apply_builtin_rule("chirp(t, f0, t1, f1, 'quadratic', 90)"),
+            "specialist_lib.chirp(t, f0, t1, f1, 'quadratic', 90)",
+        )
+
+    def test_conv(self):
+        self.assertEqual(apply_builtin_rule("conv(u, v)"), "specialist_lib.conv(u, v)")
+        self.assertEqual(
+            apply_builtin_rule("conv(u, v, 'same')"),
+            "specialist_lib.conv(u, v, 'same')",
+        )
+
+    def test_awgn(self):
+        self.assertEqual(
+            apply_builtin_rule("awgn(x, 10, 'measured')"),
+            "specialist_lib.awgn(x, 10, 'measured')",
+        )
+
+    def test_comm_awgn_channel(self):
+        self.assertEqual(
+            apply_builtin_rule("comm.AWGNChannel(x, 5)"),
+            "specialist_lib.awgn(x, 5)",
+        )
+
+    def test_steervec(self):
+        self.assertEqual(
+            apply_builtin_rule("steervec(fc, angles)"),
+            "specialist_lib.steering_vector(fc, angles)",
+        )
+
+    def test_phased_array_response(self):
+        self.assertEqual(
+            apply_builtin_rule("phased.ArrayResponse('SensorArray', array)"),
+            "specialist_lib.array_factor('SensorArray', array)",
+        )
+
+    def test_phased_beamformer(self):
+        self.assertEqual(
+            apply_builtin_rule("phased.Beamformer(signal, weights)"),
+            "specialist_lib.beamform(signal, weights)",
+        )
+
+    def test_specialist_output_is_not_numpy_or_scipy(self):
+        cases = [
+            ("chirp(t, 0, 1, 100)", "specialist_lib.chirp(t, 0, 1, 100)"),
+            ("conv(u, v, 'same')", "specialist_lib.conv(u, v, 'same')"),
+            ("awgn(x, 10, 'measured')", "specialist_lib.awgn(x, 10, 'measured')"),
+            ("steervec(fc, angles)", "specialist_lib.steering_vector(fc, angles)"),
+            (
+                "phased.ArrayResponse('SensorArray', array)",
+                "specialist_lib.array_factor('SensorArray', array)",
+            ),
+            (
+                "phased.Beamformer(signal, weights)",
+                "specialist_lib.beamform(signal, weights)",
+            ),
+            ("comm.AWGNChannel(x, 5)", "specialist_lib.awgn(x, 5)"),
+        ]
+        for matlab, expected in cases:
+            output = apply_builtin_rule(matlab)
+            self.assertEqual(output, expected)
+            self.assertNotIn("np.", output)
+            self.assertNotIn("scipy.", output)
+
+    def test_unknown_call_passthrough_unchanged(self):
+        self.assertEqual(apply_builtin_rule("myfunc(x)"), "myfunc(x)")
+
+
 if __name__ == "__main__":
     unittest.main()

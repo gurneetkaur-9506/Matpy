@@ -108,11 +108,30 @@ consulted independently or combined into larger transformations.
 ### Specialist Library
 
 The Specialist Library is a collection of small, focused translation modules,
-each expert in one domain such as matrix operations, signal processing, or
-plotting. Specialists implement the trickier one-to-many conversions that a
+each expert in one domain such as array processing, signal generation, or noise
+modelling. Specialists implement the trickier one-to-many conversions that a
 single rule cannot express, producing Python that relies on numpy and scipy
-idioms. They register with the Rulebook so they can be invoked when a matched
-pattern falls into their specialty.
+idioms.
+
+Specialists register with the Rulebook: each domain function is an entry in the
+Rulebook's builtin table (`rulebook/builtin_rules.py`), so when a MATLAB call
+matches a specialist's domain it is translated to a `specialist_lib` call at
+translation time rather than passed through or silently substituted with a
+numpy/scipy equivalent. The wired mappings are:
+
+| MATLAB call | specialist_lib function |
+| --- | --- |
+| `chirp(...)` | `specialist_lib.chirp` |
+| `conv(...)` | `specialist_lib.conv` |
+| `awgn(...)` / `comm.AWGNChannel(...)` | `specialist_lib.awgn` |
+| `steervec(...)` | `specialist_lib.steering_vector` |
+| `phased.ArrayResponse(...)` | `specialist_lib.array_factor` |
+| `phased.Beamformer(...)` | `specialist_lib.beamform` |
+
+The `fscanf` file-reading idiom is wired separately through the scan rules
+(`rulebook/scan_rules.py`), which emit `specialist_lib.read_matlab_scan_file`.
+Its companion `format_spec_to_columns` is an internal helper called by that
+function and is never emitted directly by the Rulebook.
 
 ### Checker
 

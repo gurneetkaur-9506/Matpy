@@ -129,8 +129,11 @@ def _split_top_level(text, sep):
     return parts
 
 
-def _split_call(expr):
-    match = re.match(r"\s*([A-Za-z_][A-Za-z0-9_]*)\s*\(", expr)
+def _split_call(expr, dotted=False):
+    pattern = r"\s*([A-Za-z_][A-Za-z0-9_]*)\s*\("
+    if dotted:
+        pattern = r"\s*([A-Za-z_][A-Za-z0-9_]*\.[A-Za-z_][A-Za-z0-9_.]*)\s*\("
+    match = re.match(pattern, expr)
     if not match:
         return None
     start = expr.find("(", match.start())
@@ -645,6 +648,17 @@ def _translate_expr(expr, scalars=None, declared=None):
                 return "%s(%s)" % (name, ", ".join(translated))
             return apply_indexing_rule(expr)
         return UNRESOLVED
+
+    # A dotted MATLAB call such as a System-object constructor
+    # (phased.ArrayResponse, comm.AWGNChannel).  Known specialist names
+    # are routed through the same builtin table as bare calls; unknown
+    # dotted calls keep their current pass-through behaviour.
+    dotted = _split_call(expr, dotted=True)
+    if dotted is not None:
+        name, argtext = dotted
+        if name in BUILTIN_RULES:
+            return _translate_builtin_call(name, argtext, scalars, declared)
+        return expr
 
     idx, op = _find_last_operator(expr)
     if op is None:

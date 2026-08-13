@@ -2,7 +2,11 @@ import re
 
 BUILTIN_RULES = {
     "abs": {"python": "np.abs", "arg_mode": "same"},
+    "awgn": {"python": "specialist_lib.awgn", "arg_mode": "same"},
     "ceil": {"python": "np.ceil", "arg_mode": "same"},
+    "chirp": {"python": "specialist_lib.chirp", "arg_mode": "same"},
+    "comm.AWGNChannel": {"python": "specialist_lib.awgn", "arg_mode": "same"},
+    "conv": {"python": "specialist_lib.conv", "arg_mode": "same"},
     "cos": {"python": "np.cos", "arg_mode": "same"},
     "exp": {"python": "np.exp", "arg_mode": "same"},
     "fft": {"python": "np.fft.fft", "arg_mode": "same"},
@@ -11,12 +15,15 @@ BUILTIN_RULES = {
     "hann": {"python": "scipy.signal.windows.hann", "arg_mode": "same"},
     "linspace": {"python": "np.linspace", "arg_mode": "same"},
     "log": {"python": "np.log", "arg_mode": "same"},
+    "phased.ArrayResponse": {"python": "specialist_lib.array_factor", "arg_mode": "same"},
+    "phased.Beamformer": {"python": "specialist_lib.beamform", "arg_mode": "same"},
     "randn": {"python": "np.random.randn", "arg_mode": "randn"},
     "reshape": {"python": "np.reshape", "arg_mode": "tuple_dims"},
     "round": {"python": "np.round", "arg_mode": "same"},
     "sin": {"python": "np.sin", "arg_mode": "same"},
     "size": {"python": ".shape", "arg_mode": "size"},
     "sqrt": {"python": "np.sqrt", "arg_mode": "same"},
+    "steervec": {"python": "specialist_lib.steering_vector", "arg_mode": "same"},
     "tan": {"python": "np.tan", "arg_mode": "same"},
     "zeros": {"python": "np.zeros", "arg_mode": "tuple_dims"},
 }
@@ -134,7 +141,7 @@ def apply_builtin_rule_reverse(call):
 
 def apply_builtin_rule(call):
     call = call.strip()
-    match = re.fullmatch(r"([A-Za-z_][A-Za-z0-9_]*)\s*\((.*)\)", call)
+    match = re.fullmatch(r"([A-Za-z_][A-Za-z0-9_.]*)\s*\((.*)\)", call)
     if not match:
         return call
     name = match.group(1)
