@@ -77,6 +77,43 @@ class TestApplyOperatorRule(unittest.TestCase):
         self.assertEqual(apply_operator_rule("a * b"), "a @ b")
         self.assertEqual(apply_operator_rule("A * B * C"), "A @ B @ C")
 
+    def test_literal_times_literal_uses_plain_star(self):
+        self.assertEqual(apply_operator_rule("2 * 3"), "2 * 3")
+
+    def test_literal_times_known_scalar_uses_plain_star(self):
+        self.assertEqual(
+            apply_operator_rule("2 * fs", scalars={"fs"}), "2 * fs"
+        )
+
+    def test_known_scalar_times_array_uses_plain_star(self):
+        # MATLAB scalar * array is element-wise (broadcast), never matrix
+        # multiply, so a known scalar operand forces '*' on the other side.
+        self.assertEqual(
+            apply_operator_rule("c * A", scalars={"c"}), "c * A"
+        )
+        self.assertEqual(
+            apply_operator_rule("A * c", scalars={"c"}), "A * c"
+        )
+
+    def test_array_times_array_stays_at_with_scalars_known(self):
+        self.assertEqual(
+            apply_operator_rule("A * B", scalars={"c"}), "A @ B"
+        )
+
+    def test_beamform_scalar_multiplications_use_plain_star(self):
+        # beamform_basic.m: k and d are function parameters (scalars), so
+        # 'k * d * (sin(theta) - sin(theta0))' must not become matrix '@'.
+        self.assertEqual(
+            apply_operator_rule(
+                "k * d * (sin(theta) - sin(theta0))", scalars={"k", "d"}
+            ),
+            "k * d * (sin(theta) - sin(theta0))",
+        )
+        self.assertEqual(
+            apply_operator_rule("(n - 1) * phase", scalars={"n", "phase"}),
+            "(n - 1) * phase",
+        )
+
     def test_no_operator_passthrough(self):
         self.assertEqual(apply_operator_rule("a + b"), "a + b")
         self.assertEqual(apply_operator_rule("sin(x)"), "sin(x)")

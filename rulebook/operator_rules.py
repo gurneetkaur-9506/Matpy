@@ -143,6 +143,35 @@ def is_scalar_like(expr):
     return False
 
 
+def is_known_scalar(expr, scalars=None):
+    """True when ``expr`` is a scalar per the tracked ``scalars`` set or per
+    plain syntax.
+
+    Mirrors :func:`is_scalar_like` but additionally treats a bare identifier
+    as scalar when it is present in ``scalars`` (variables the Structure/IR
+    already tracks as scalar: function parameters, loop indices, and
+    variables assigned scalar expressions).  With ``scalars=None`` the result
+    is identical to :func:`is_scalar_like`, so callers with no scalar
+    knowledge (e.g. the standalone operator rule) keep the conservative
+    matrix-default ``@`` for unknown operands.
+    """
+    expr = _strip_outer_parens(expr)
+    if not expr:
+        return True
+    if _SCALAR_RE.fullmatch(expr) or _IMAG_SCALAR_RE.fullmatch(expr):
+        return True
+    if expr in _SCALAR_CONSTANTS:
+        return True
+    if scalars and re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", expr) and expr in scalars:
+        return True
+    idx, op = _find_last_operator(expr)
+    if op is None:
+        return is_scalar_like(expr)
+    return is_known_scalar(expr[:idx], scalars) and is_known_scalar(
+        expr[idx + len(op):], scalars
+    )
+
+
 def _find_last_operator(expr):
     protected = _protected_positions(expr)
 
@@ -264,7 +293,16 @@ def apply_transpose_rule(base, transpose_kind):
     return "np.conj(%s).T" % base
 
 
-def apply_operator_rule(expr):
+def apply_operator_rule(expr, scalars=None):
+    """Translate a MATLAB operator expression to Python.
+
+    ``scalars`` optionally names the variables the Structure/IR already
+    tracks as scalar (function parameters, loop indices, scalar-assigned
+    variables).  When it is provided, a MATLAB '*' whose operands are both
+    known scalars maps to Python element-wise '*' instead of the conservative
+    matrix-default '@'.  With ``scalars=None`` the decision uses only plain
+    syntax (literals/constants), so unknown operands keep '@'.
+    """
     expr = expr.strip()
     idx, op = _find_last_operator(expr)
     if op is None:
@@ -272,16 +310,16 @@ def apply_operator_rule(expr):
         if transposed is not None:
             base, transpose_kind = transposed
             return apply_transpose_rule(
-                apply_operator_rule(base), transpose_kind
+                apply_operator_rule(base, scalars), transpose_kind
             )
         return expr
 
-    left = apply_operator_rule(expr[:idx])
-    right = apply_operator_rule(expr[idx + len(op):])
+    left = apply_operator_rule(expr[:idx], scalars)
+    right = apply_operator_rule(expr[idx + len(op):], scalars)
 
     if op == "*":
-        if not is_scalar_like(expr[:idx]) and not is_scalar_like(
-            expr[idx + len(op):]
+        if not is_known_scalar(expr[:idx], scalars) and not is_known_scalar(
+            expr[idx + len(op):], scalars
         ):
             return "%s @ %s" % (left, right)
         return "%s * %s" % (left, right)

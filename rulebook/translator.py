@@ -25,7 +25,7 @@ from .operator_rules import (
     _split_transpose,
     apply_operator_rule_reverse,
     apply_transpose_rule,
-    is_scalar_like,
+    is_known_scalar,
 )
 from .scan_rules import (
 
@@ -206,28 +206,14 @@ _LINSPACE_STEP = re.compile(
     r"^\s*\(?\s*1\s*/\s*\(\s*length\s*\(\s*([A-Za-z_][A-Za-z0-9_]*)\s*\)\s*-\s*1\s*\)\s*\)?\s*$"
 )
 
-_IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
-
-
 def _is_scalar(expr, scalars):
     """True when ``expr`` is a scalar: a literal, a scalar-producing call
     (length/numel/round/max/...), a variable previously assigned a scalar
-    value, or an operator expression built entirely from scalars.  Outer
+    value (or a function parameter/loop index the Structure already tracks),
+    or an operator expression built entirely from scalars.  Outer
     parentheses are stripped first so a divisor like ``(2*fs)`` is recognized
     as the scalar it is."""
-    expr = expr.strip()
-    while _outer_parens_wrap(expr):
-        expr = expr[1:-1].strip()
-    if scalars and _IDENTIFIER.fullmatch(expr) and expr in scalars:
-        return True
-    if _IDENTIFIER.fullmatch(expr):
-        return is_scalar_like(expr)
-    idx, op = _find_last_operator(expr)
-    if op is None:
-        return is_scalar_like(expr)
-    return _is_scalar(expr[:idx], scalars) and _is_scalar(
-        expr[idx + len(op):], scalars
-    )
+    return is_known_scalar(expr, scalars)
 
 
 def _inclusive_stop(expr):
@@ -794,7 +780,13 @@ def _translate_loop(stmt, scalars=None, declared=None, io=None, renames=None, fi
     _attach_renames(result, stmt.header, renames, first_seen)
     body_declared = set(declared) if declared else set()
     loop_var = _loop_variable(stmt)
-    body_declared.add(renames.get(loop_var, loop_var) if renames else loop_var)
+    loop_var_renamed = renames.get(loop_var, loop_var) if renames else loop_var
+    body_declared.add(loop_var_renamed)
+    if scalars is not None:
+        # A 'for n = 1:N' index takes one scalar element per iteration, so
+        # it is scalar by construction and a '*' it participates in maps to
+        # element-wise '*' rather than matrix '@'.
+        scalars.add(loop_var_renamed)
     body = []
     for s in stmt.statements:
         body.append(
@@ -1260,7 +1252,7 @@ def _translate_function(func):
         func.statements, func.parameters, func.outputs, func.name
     )
     declared = {renames.get(p, p) for p in func.parameters}
-    scalars = set()
+    scalars = {renames.get(p, p) for p in func.parameters}
     io = {}
     translated = []
     for stmt in func.statements:

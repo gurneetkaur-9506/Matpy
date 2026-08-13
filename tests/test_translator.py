@@ -200,7 +200,7 @@ class TestLoopHandling(unittest.TestCase):
         self.assertEqual(loop[0]["python"], "for n in range(N):")
         self.assertEqual(
             [b["python"] for b in loop[0]["body"]],
-            ["af = af + np.exp(1j * (n - 1) @ phase)"],
+            ["af = af + np.exp(1j * (n - 1) * phase)"],
         )
 
     def test_loop_with_unresolved_body_marked_unresolved(self):
@@ -225,8 +225,10 @@ class TestBuiltinArgTranslation(unittest.TestCase):
 
     def test_imaginary_literal_inside_exp(self):
         self.assertEqual(
-            _translate_expr("exp(1i * (n - 1) * phase)", set(), set()),
-            "np.exp(1j * (n - 1) @ phase)",
+            _translate_expr(
+                "exp(1i * (n - 1) * phase)", {"phase", "n"}, set()
+            ),
+            "np.exp(1j * (n - 1) * phase)",
         )
 
     def test_builtin_arg_translation_output_parses(self):
