@@ -198,7 +198,8 @@ def _checker_entries(result):
             "The checker could not reach a conclusive verdict. Its numeric "
             "check is an internal-consistency comparison against a "
             "deterministic seeded mock reference, not MATLAB-fidelity "
-            "verification, so the verdict stays inconclusive."
+            "verification; with no live MATLAB Engine the verdict stays "
+            "inconclusive."
         )
     else:
         return []

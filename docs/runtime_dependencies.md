@@ -48,8 +48,9 @@ perform network I/O in the code paths this application uses.
 - **Network:** none. Loads the translated Python module in-process via
   `importlib`; the MATLAB side is simulated with seeded random arrays.
 - **Note:** the numeric cross-check is an internal-consistency comparison
-  against that seeded mock. No real MATLAB runtime is involved anywhere in
-  the pipeline.
+  against that seeded mock. A live MATLAB Engine backend exists
+  (`run_matlab_real.py`) but requires the external `matlab.engine` package,
+  which is not bundled, so it is never exercised in this build.
 
 ### UI
 - **Files:** `ui/minimal_window.py`, `ui/translator_window.py`, `ui/summary.py`

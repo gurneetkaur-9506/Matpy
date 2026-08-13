@@ -4,6 +4,7 @@ import os
 import tempfile
 
 from checker import verify
+from checker.run_matlab_real import matlab_engine_available as _engine_probe
 from reader import (
     MATLAB_TO_PYTHON,
     PYTHON_TO_MATLAB,
@@ -14,6 +15,19 @@ from rulebook import UNRESOLVED, translate_with_rulebook, translate_with_ruleboo
 
 def _parse(source, direction):
     return load_structure_from_source(source, direction)
+
+
+def matlab_engine_available():
+    """Return True when a live MATLAB Engine session can be started.
+
+    The probe imports ``matlab.engine`` lazily and only reports True on
+    machines where the MATLAB Engine for Python is installed.  When True the
+    Checker runs the original MATLAB source through a live engine and a
+    "failed" comparison is a genuine mismatch.  When False the Checker falls
+    back to the seeded mock reference and any "failed" comparison is
+    downgraded to the inconclusive "inconclusive_no_matlab" verdict.
+    """
+    return _engine_probe()
 
 
 def _emit_block(statements, lines, indent="", problems=None):
@@ -208,13 +222,19 @@ def translate_source(
     result["problems"] = problems
 
     if not inputs:
-        result["sections"]["checker"] = {
-            "status": "inconclusive_no_matlab",
-            "detail": (
-                "no inputs provided for the reference comparison, so "
-                "no numeric verdict was reached"
-            ),
-        }
+        if matlab_engine_available():
+            result["sections"]["checker"] = {
+                "status": "skipped",
+                "detail": "no inputs provided for the reference comparison",
+            }
+        else:
+            result["sections"]["checker"] = {
+                "status": "inconclusive_no_matlab",
+                "detail": (
+                    "no inputs provided for the reference comparison, so "
+                    "no numeric verdict was reached"
+                ),
+            }
         return result
 
     with tempfile.TemporaryDirectory() as tmp:
@@ -235,7 +255,7 @@ def translate_source(
                 f.write(result["python"])
         try:
             verdict = verify(matlab_path, py_path, inputs, tolerance=tolerance)
-            if verdict == "failed":
+            if verdict == "failed" and not matlab_engine_available():
                 result["sections"]["checker"] = {
                     "status": "inconclusive_no_matlab",
                     "detail": (
