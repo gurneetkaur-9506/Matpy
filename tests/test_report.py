@@ -2,6 +2,7 @@ import unittest
 
 import ast
 import numpy as np
+import pytest
 
 from checker import build_translation_report
 from reader import PYTHON_TO_MATLAB
@@ -301,6 +302,83 @@ class TestReportWithBeamform(unittest.TestCase):
         self.assertIn(9, lines)
 
         self.assertIsNone(by_issue["inconclusive_no_matlab"]["line"])
+
+
+@pytest.mark.parametrize(
+    "kind,source,attempted,reason",
+    [
+        (
+            "command",
+            "widgetx on",
+            "looked the command up in the rulebook's command table",
+            "MATLAB command 'widgetx on' has no direct Python equivalent in the rulebook.",
+        ),
+        (
+            "function_call",
+            "fft(y)",
+            "tried to map the call through the builtin, plot, and indexing rules",
+            "The rulebook has no rule for the function 'fft', so the call was left for manual review.",
+        ),
+        (
+            "assignment",
+            "x = interp1(a, b)",
+            "tried to translate the right-hand expression with the operator and builtin rules",
+            "The expression 'interp1(a, b)' could not be reduced by the rulebook's operator or builtin rules.",
+        ),
+        (
+            "loop",
+            "for i = 1:N",
+            "tried to convert the loop into a Python range() loop",
+            "The loop 'for i = 1:N' does not fit the range pattern the rulebook translates.",
+        ),
+        (
+            "return",
+            "return af",
+            "tried to reconstruct the return value with the reverse rules",
+            "The return value in 'return af' could not be reconstructed by the reverse rules.",
+        ),
+    ],
+)
+def test_unresolved_plain_language_wording(kind, source, attempted, reason):
+    """The exact plain-language 'attempted' and 'reason' texts are the
+    contract for each unresolved statement kind."""
+    entry = build_translation_report(_result(statements=[_stmt(kind, source)]))[0]
+    assert entry["issue"] == "unresolved"
+    assert entry["attempted"] == attempted
+    assert entry["reason"] == reason
+
+
+def test_function_call_without_name_reason_wording():
+    entry = build_translation_report(
+        _result(statements=[_stmt("function_call", "2 + 2")])
+    )[0]
+    assert entry["reason"] == "The call does not match any rulebook pattern."
+
+
+@pytest.mark.parametrize(
+    "status,reason",
+    [
+        (
+            "failed",
+            "The checker compared the reference and translated outputs and they disagreed beyond the allowed tolerance.",
+        ),
+        (
+            "review needed",
+            "The checker could not decide whether the outputs match: an execution failure, misaligned output names, shape mismatch, or non-finite values were involved.",
+        ),
+        (
+            "inconclusive_no_matlab",
+            "The checker could not reach a conclusive verdict because the reference is only a seeded mock rather than real MATLAB output; the comparison ran but its result is inconclusive.",
+        ),
+    ],
+)
+def test_checker_verdict_plain_language_wording(status, reason):
+    """Checker verdicts carry a fixed plain-language explanation."""
+    entry = build_translation_report(_result(checker=status))[0]
+    assert entry["attempted"] == (
+        "Compared the translated output against the reference numerically."
+    )
+    assert entry["reason"] == reason
 
 
 if __name__ == "__main__":

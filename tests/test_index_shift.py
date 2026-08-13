@@ -1,5 +1,7 @@
 import unittest
 
+import pytest
+
 from rulebook.index_shift import FORWARD, REVERSE, UNRESOLVED, shift_index
 
 
@@ -232,6 +234,55 @@ class TestShiftIndexDivision(unittest.TestCase):
         self.assertEqual(
             apply_indexing_rule("P2(1:length(P2)/2+1)"), "P2[0:len(P2)//2+1]"
         )
+
+
+@pytest.mark.parametrize(
+    "expr,expected",
+    [
+        ("n/2:5", "(n//2) - 1:5"),
+        ("n/2:n", "(n//2) - 1:n"),
+        ("1:n/2+1", "0:n//2+1"),
+        ("1:(n+1)/2", "0:(n+1)//2"),
+        ("2:k/3", "1:k//3"),
+        ("x(2:n/3)", "x[1:n//3]"),
+        ("A(1:n/2, :)", "A[0:n//2, :]"),
+    ],
+)
+def test_forward_division_range_patterns(expr, expected):
+    """A division-derived range shifts its start and floor-divides its stop."""
+    assert shift_index(expr, FORWARD) == expected
+
+
+@pytest.mark.parametrize(
+    "expr,expected",
+    [
+        ("n//2:5", "(n//2) + 1:5"),
+        ("1:n//2+1", "2:n//2+1"),
+        ("2:k//3", "3:k//3"),
+        ("x[2:n//3]", "x(3:n//3)"),
+        ("A[1:n//2, :]", "A(2:n//2, :)"),
+    ],
+)
+def test_reverse_division_range_patterns(expr, expected):
+    """The mirror image of the forward division-range cases."""
+    assert shift_index(expr, REVERSE) == expected
+
+
+@pytest.mark.parametrize(
+    "expr,direction,expected",
+    [
+        ("x(n/2)", FORWARD, "x[(n//2) - 1]"),
+        ("x[n//2]", REVERSE, "x((n//2) + 1)"),
+        ("(n+1)/2", FORWARD, "((n+1)//2) - 1"),
+        ("(n+1)//2", REVERSE, "((n+1)//2) + 1"),
+        ("end/2", FORWARD, "(end//2) - 1"),
+        ("end/2", REVERSE, "(end//2) + 1"),
+        ("n/2/3", FORWARD, "(n//2//3) - 1"),
+    ],
+)
+def test_division_index_forms(expr, direction, expected):
+    """Division indices outside a range still floor-divide and shift."""
+    assert shift_index(expr, direction) == expected
 
 
 if __name__ == "__main__":

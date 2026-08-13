@@ -1,5 +1,7 @@
 import unittest
 
+import pytest
+
 from rulebook import apply_builtin_rule
 
 
@@ -183,6 +185,61 @@ class TestSpecialistBuiltinRules(unittest.TestCase):
 
     def test_unknown_call_passthrough_unchanged(self):
         self.assertEqual(apply_builtin_rule("myfunc(x)"), "myfunc(x)")
+
+
+@pytest.mark.parametrize(
+    "matlab,expected",
+    [
+        ("conv(u, v, 'full')", "specialist_lib.conv(u, v, 'full')"),
+        ("conv(u, v, 'valid')", "specialist_lib.conv(u, v, 'valid')"),
+        ("awgn(x, 10)", "specialist_lib.awgn(x, 10)"),
+        (
+            "comm.AWGNChannel(x, 5, 'SignalPower', 1)",
+            "specialist_lib.awgn(x, 5, 'SignalPower', 1)",
+        ),
+        (
+            "steervec(fc, angles, 'WeightsNormalization', 'steer')",
+            "specialist_lib.steering_vector(fc, angles, 'WeightsNormalization', 'steer')",
+        ),
+        (
+            "chirp(t, 0, 1, 100, 'linear', 0)",
+            "specialist_lib.chirp(t, 0, 1, 100, 'linear', 0)",
+        ),
+        (
+            "phased.ArrayResponse('SensorArray', array, 'Weights', w)",
+            "specialist_lib.array_factor('SensorArray', array, 'Weights', w)",
+        ),
+        (
+            "phased.Beamformer(signal, weights, 'Weights', w)",
+            "specialist_lib.beamform(signal, weights, 'Weights', w)",
+        ),
+    ],
+)
+def test_specialist_option_arguments_passthrough(matlab, expected):
+    """Option/name-value arguments after the positional ones stay put."""
+    assert apply_builtin_rule(matlab) == expected
+
+
+@pytest.mark.parametrize(
+    "matlab,expected",
+    [
+        (
+            "conv(chirp(t, 0, 1, 100), h)",
+            "specialist_lib.conv(specialist_lib.chirp(t, 0, 1, 100), h)",
+        ),
+        (
+            "awgn(fft(x), snr, 'measured')",
+            "specialist_lib.awgn(np.fft.fft(x), snr, 'measured')",
+        ),
+        (
+            "chirp(fft(t), 0, 1, 100)",
+            "specialist_lib.chirp(np.fft.fft(t), 0, 1, 100)",
+        ),
+    ],
+)
+def test_specialist_nested_arguments_translate(matlab, expected):
+    """Arguments nested inside a specialist call translate recursively."""
+    assert apply_builtin_rule(matlab) == expected
 
 
 if __name__ == "__main__":
