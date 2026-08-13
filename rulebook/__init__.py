@@ -26,6 +26,7 @@ from .operator_rules import (
     scientific_literals,
 )
 from .sequence_rules import SEQUENCE_RULES, apply_sequence_rule_reverse
+from .shape_inference import infer_shapes, shape_of_expr
 from .translator import (
     UNRESOLVED,
     assert_block_invariant,
@@ -55,8 +56,10 @@ __all__ = [
     "apply_indexing_rule_reverse",
     "apply_operator_rule",
     "apply_operator_rule_reverse",
+    "infer_shapes",
     "matlab_string_literal_to_python",
     "scientific_literals",
+    "shape_of_expr",
     "translate_multi_output_assignment",
     "translate_with_rulebook",
     "translate_with_rulebook_reverse",

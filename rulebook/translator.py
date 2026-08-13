@@ -27,6 +27,7 @@ from .operator_rules import (
     apply_transpose_rule,
     is_known_scalar,
 )
+from .shape_inference import infer_shapes
 from .scan_rules import (
 
     translate_feof_loop,
@@ -1247,12 +1248,18 @@ def _attach_renames(stmt, text, renames, first_seen):
         stmt["renamed"] = comments
 
 
-def _translate_function(func):
+def _translate_function(func, shapes=None):
     renames, first_seen = _compute_renames(
         func.statements, func.parameters, func.outputs, func.name
     )
     declared = {renames.get(p, p) for p in func.parameters}
     scalars = {renames.get(p, p) for p in func.parameters}
+    if shapes is not None:
+        # Enrich the scalar set with names the inference pass proved to be
+        # definite scalars (assigned exactly once), so '/' and '*' involving
+        # them stay element-wise rather than a matrix solve / product.
+        for name in shapes.scalar_names(func.name):
+            scalars.add(renames.get(name, name))
     io = {}
     translated = []
     for stmt in func.statements:
@@ -1275,14 +1282,19 @@ def _translate_function(func):
     }
 
 
-def translate_with_rulebook(structure):
+def translate_with_rulebook(structure, shapes=None):
+    if shapes is None:
+        shapes = infer_shapes(structure)
     result = {"functions": [], "statements": []}
     for func in structure.functions:
-        result["functions"].append(_translate_function(func))
+        result["functions"].append(_translate_function(func, shapes))
     scalars = set()
     declared = set()
     io = {}
     renames, first_seen = _compute_renames(structure.statements)
+    if shapes is not None:
+        for name in shapes.scalar_names("top"):
+            scalars.add(renames.get(name, name))
     for stmt in structure.statements:
         result["statements"].append(
             _translate_statement(stmt, scalars, declared, io, renames, first_seen)

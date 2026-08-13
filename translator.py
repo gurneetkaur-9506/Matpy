@@ -192,11 +192,36 @@ def translate_source(
     }
 
     reverse = direction == PYTHON_TO_MATLAB
-    rulebook_result = (
-        translate_with_rulebook_reverse(structure)
-        if reverse
-        else translate_with_rulebook(structure)
-    )
+    if reverse:
+        rulebook_result = translate_with_rulebook_reverse(structure)
+    else:
+        from rulebook.shape_inference import InferenceResult, infer_shapes
+
+        inference = InferenceResult()
+        inference_status = "ok"
+        inference_detail = None
+        try:
+            inference = infer_shapes(structure)
+        except Exception as exc:
+            inference_status = "error"
+            inference_detail = str(exc)
+        if inference_status == "ok":
+            result["sections"]["inference"] = {
+                "status": "ok",
+                "counts": inference.counts,
+                "scalars": sorted(inference.scalar_names("top"))
+                + sorted(
+                    name
+                    for func in structure.functions
+                    for name in inference.scalar_names(func.name)
+                ),
+            }
+        else:
+            result["sections"]["inference"] = {
+                "status": "error",
+                "detail": inference_detail,
+            }
+        rulebook_result = translate_with_rulebook(structure, shapes=inference)
     output_key = "matlab" if reverse else "python"
     all_statements = rulebook_result["statements"] + [
         s for fn in rulebook_result["functions"] for s in fn["statements"]
