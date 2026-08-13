@@ -1,5 +1,7 @@
 import unittest
 
+import pytest
+
 from rulebook import apply_builtin_rule_reverse
 
 
@@ -51,7 +53,7 @@ class TestApplyBuiltinRuleReverse(unittest.TestCase):
         self.assertEqual(apply_builtin_rule_reverse("np.sqrt(x)"), "sqrt(x)")
 
     def test_unknown_call_passthrough(self):
-        self.assertEqual(apply_builtin_rule_reverse("np.linalg.det(a)"), "np.linalg.det(a)")
+        self.assertEqual(apply_builtin_rule_reverse("np.linalg.svd(a)"), "np.linalg.svd(a)")
         self.assertEqual(apply_builtin_rule_reverse("myfunc(x)"), "myfunc(x)")
 
     def test_operator_expression_not_misparsed_as_single_call(self):
@@ -128,6 +130,74 @@ class TestReverseIdenticalNamingBuiltins(unittest.TestCase):
         self.assertEqual(apply_builtin_rule_reverse("np.cos(theta)"), "cos(theta)")
         self.assertEqual(
             apply_builtin_rule_reverse("np.cos(2*pi*f*t)"), "cos(2*pi*f*t)"
+        )
+
+
+@pytest.mark.parametrize(
+    "python,matlab",
+    [
+        ("np.arccos(x)", "acos(x)"),
+        ("np.arccosh(x)", "acosh(x)"),
+        ("np.arcsin(x)", "asin(x)"),
+        ("np.arcsinh(x)", "asinh(x)"),
+        ("np.arctan(x)", "atan(x)"),
+        ("np.arctanh(x)", "atanh(x)"),
+        ("np.arctan2(y, x)", "atan2(y, x)"),
+        ("np.cosh(x)", "cosh(x)"),
+        ("np.sinh(x)", "sinh(x)"),
+        ("np.tanh(x)", "tanh(x)"),
+        ("np.log2(x)", "log2(x)"),
+        ("np.log1p(x)", "log1p(x)"),
+        ("np.expm1(x)", "expm1(x)"),
+        ("np.exp2(x)", "pow2(x)"),
+        ("np.sign(x)", "sign(x)"),
+        ("np.mod(a, b)", "mod(a, b)"),
+        ("np.fmod(a, b)", "rem(a, b)"),
+        ("np.hypot(a, b)", "hypot(a, b)"),
+        ("np.real(Z)", "real(Z)"),
+        ("np.imag(Z)", "imag(Z)"),
+        ("np.angle(Z)", "angle(Z)"),
+        ("np.linalg.det(A)", "det(A)"),
+        ("np.linalg.inv(A)", "inv(A)"),
+        ("np.linalg.pinv(A)", "pinv(A)"),
+        ("np.diag(v)", "diag(v)"),
+        ("np.trace(A)", "trace(A)"),
+        ("np.triu(A)", "triu(A)"),
+        ("np.tril(A)", "tril(A)"),
+        ("np.cross(a, b)", "cross(a, b)"),
+        ("np.kron(A, B)", "kron(A, B)"),
+        ("np.fft.ifft(X)", "ifft(X)"),
+        ("np.fft.fftshift(X)", "fftshift(X)"),
+        ("np.fft.ifftshift(X)", "ifftshift(X)"),
+        ("np.squeeze(A)", "squeeze(A)"),
+        ("np.flipud(A)", "flipud(A)"),
+        ("np.unique(x)", "unique(x)"),
+        ("np.any(x)", "any(x)"),
+        ("np.all(x)", "all(x)"),
+        ("np.logspace(0, 2, 50)", "logspace(0, 2, 50)"),
+    ],
+)
+def test_extended_builtin_rules_reverse(python, matlab):
+    assert apply_builtin_rule_reverse(python) == matlab
+
+
+class TestExtendedBuiltinRulesReverseDims(unittest.TestCase):
+    def test_ones(self):
+        self.assertEqual(apply_builtin_rule_reverse("np.ones((2, 5))"), "ones(2, 5)")
+        self.assertEqual(apply_builtin_rule_reverse("np.ones(3)"), "ones(3)")
+
+    def test_rand(self):
+        self.assertEqual(apply_builtin_rule_reverse("np.random.rand(3, 5)"), "rand(3, 5)")
+        self.assertEqual(
+            apply_builtin_rule_reverse("np.random.rand(*X.shape)"), "rand(size(X))"
+        )
+
+    def test_nested_extended(self):
+        self.assertEqual(
+            apply_builtin_rule_reverse("np.angle(np.fft.fft(x))"), "angle(fft(x))"
+        )
+        self.assertEqual(
+            apply_builtin_rule_reverse("np.real(np.fft.ifft(Y))"), "real(ifft(Y))"
         )
 
 

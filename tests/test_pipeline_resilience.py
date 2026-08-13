@@ -10,7 +10,7 @@ from translator import translate_file
 
 TWO_FUNCTION_MATLAB = """\
 function out = broken_func(x)
-    out = fftshift(sum(x));
+    out = smoothdata(sum(x));
 end
 
 function total = add_one(x)
@@ -20,7 +20,7 @@ end
 
 TWO_UNRESOLVED_MATLAB = """\
 function out = broken_func(x)
-    out = fftshift(sum(x));
+    out = smoothdata(sum(x));
 end
 
 function y = shaky_func(a, b)
@@ -50,7 +50,7 @@ class TestRulebookResilience(unittest.TestCase):
         issues = [e["issue"] for e in report]
         self.assertIn("unresolved", issues)
         unresolved = next(e for e in report if e["issue"] == "unresolved")
-        self.assertEqual(unresolved["source"], "out = fftshift(sum(x))")
+        self.assertEqual(unresolved["source"], "out = smoothdata(sum(x))")
         self.assertEqual(unresolved["line"], 2)
 
 

@@ -349,6 +349,100 @@ def _translate_reduction_call(name, argtext, scalars=None, declared=None):
     return UNRESOLVED
 
 
+# Single-output builtins whose MATLAB dimension argument (1-based, so the
+# second argument when the function takes one) must become an explicit numpy
+# axis (0-based).  Mapping them through the plain "same" table would silently
+# treat ``cumsum(x, 2)`` as ``np.cumsum(x, 2)`` (axis 2) instead of
+# ``np.cumsum(x, axis=1)``.
+_DIM_STAT_BUILTINS = {
+    "cumprod": "np.cumprod",
+    "cumsum": "np.cumsum",
+    "median": "np.median",
+    "prod": "np.prod",
+}
+
+
+def _translate_dim_builtin(name, argtext, scalars=None, declared=None):
+    """Translate a single-output reduction that takes an optional trailing
+    dimension argument.  ``prod(x)``/``cumsum(x)``/... reduce the whole
+    array; ``prod(x, dim)``/``cumsum(x, dim)``/... reduce along the MATLAB
+    dimension ``dim``, i.e. numpy axis ``dim - 1``."""
+    np_name = _DIM_STAT_BUILTINS[name]
+    args = [a.strip() for a in _split_top_level(argtext, ",") if a.strip()]
+    if not args:
+        return UNRESOLVED
+    translated = _translate_expr(args[0], scalars, declared)
+    if translated == UNRESOLVED:
+        return UNRESOLVED
+    if len(args) == 1:
+        return "%s(%s)" % (np_name, translated)
+    if len(args) == 2:
+        axis = _dim_to_axis(args[1])
+        if axis is None:
+            return UNRESOLVED
+        return "%s(%s, axis=%s)" % (np_name, translated, axis)
+    return UNRESOLVED
+
+
+def _translate_diff(argtext, scalars=None, declared=None):
+    """Translate MATLAB diff(x[, n[, dim]]).  The third argument is the
+    MATLAB dimension (1-based), so it becomes a numpy axis (0-based) rather
+    than numpy's own ``n`` parameter."""
+    args = [a.strip() for a in _split_top_level(argtext, ",") if a.strip()]
+    if not args:
+        return UNRESOLVED
+    translated = _translate_expr(args[0], scalars, declared)
+    if translated == UNRESOLVED:
+        return UNRESOLVED
+    if len(args) == 1:
+        return "np.diff(%s)" % translated
+    if len(args) == 2:
+        n = _translate_expr(args[1], scalars, declared)
+        if n == UNRESOLVED:
+            return UNRESOLVED
+        return "np.diff(%s, %s)" % (translated, n)
+    if len(args) == 3:
+        n = _translate_expr(args[1], scalars, declared)
+        axis = _dim_to_axis(args[2])
+        if n == UNRESOLVED or axis is None:
+            return UNRESOLVED
+        return "np.diff(%s, %s, axis=%s)" % (translated, n, axis)
+    return UNRESOLVED
+
+
+def _translate_var_std(name, argtext, scalars=None, declared=None):
+    """Translate MATLAB var/std including their normalization argument.
+    MATLAB's default (and w=0) normalizes by N-1, i.e. numpy ``ddof=1``;
+    w=1 normalizes by N, i.e. numpy's default ``ddof=0``.  A weight vector
+    (neither 0 nor 1) has no numpy scalar equivalent and stays unresolved."""
+    np_name = "np.var" if name == "var" else "np.std"
+    args = [a.strip() for a in _split_top_level(argtext, ",") if a.strip()]
+    if not args:
+        return UNRESOLVED
+    translated = _translate_expr(args[0], scalars, declared)
+    if translated == UNRESOLVED:
+        return UNRESOLVED
+    ddof = "1"
+    axis = None
+    rest = args[1:]
+    if rest:
+        if rest[0] not in ("0", "1"):
+            return UNRESOLVED
+        if rest[0] == "1":
+            ddof = None
+        rest = rest[1:]
+    if rest:
+        axis = _dim_to_axis(rest[0])
+        if axis is None:
+            return UNRESOLVED
+    parts = [translated]
+    if ddof == "1":
+        parts.append("ddof=1")
+    if axis is not None:
+        parts.append("axis=%s" % axis)
+    return "%s(%s)" % (np_name, ", ".join(parts))
+
+
 _LIMIT_ARRAY = re.compile(r"^np\.array\(\[\[([^\[\]]*)\]\]\)$")
 
 
@@ -573,6 +667,12 @@ def _translate_expr(expr, scalars=None, declared=None):
                     return UNRESOLVED
                 return "np.fft.fft(%s, axis=%s)" % (translated, axis)
             return _translate_builtin_call(name, argtext, scalars, declared)
+        if name in _DIM_STAT_BUILTINS:
+            return _translate_dim_builtin(name, argtext, scalars, declared)
+        if name == "diff":
+            return _translate_diff(argtext, scalars, declared)
+        if name in ("var", "std"):
+            return _translate_var_std(name, argtext, scalars, declared)
         if name in BUILTIN_RULES:
             return _translate_builtin_call(name, argtext, scalars, declared)
         if name in PLOT_COMMANDS:

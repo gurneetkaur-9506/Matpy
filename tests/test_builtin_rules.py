@@ -109,6 +109,82 @@ class TestApplyBuiltinRule(unittest.TestCase):
         self.assertEqual(apply_builtin_rule("x"), "x")
 
 
+@pytest.mark.parametrize(
+    "matlab,expected",
+    [
+        # Inverse/reciprocal trigonometric functions
+        ("acos(x)", "np.arccos(x)"),
+        ("acosh(x)", "np.arccosh(x)"),
+        ("asin(x)", "np.arcsin(x)"),
+        ("asinh(x)", "np.arcsinh(x)"),
+        ("atan(x)", "np.arctan(x)"),
+        ("atanh(x)", "np.arctanh(x)"),
+        ("atan2(y, x)", "np.arctan2(y, x)"),
+        # Hyperbolic functions
+        ("cosh(x)", "np.cosh(x)"),
+        ("sinh(x)", "np.sinh(x)"),
+        ("tanh(x)", "np.tanh(x)"),
+        # Logarithms / exponentials
+        ("log2(x)", "np.log2(x)"),
+        ("log1p(x)", "np.log1p(x)"),
+        ("expm1(x)", "np.expm1(x)"),
+        ("pow2(x)", "np.exp2(x)"),
+        # Sign, rounding-modulo family
+        ("sign(x)", "np.sign(x)"),
+        ("mod(a, b)", "np.mod(a, b)"),
+        ("rem(a, b)", "np.fmod(a, b)"),
+        ("hypot(a, b)", "np.hypot(a, b)"),
+        # Complex parts and phase
+        ("real(Z)", "np.real(Z)"),
+        ("imag(Z)", "np.imag(Z)"),
+        ("angle(Z)", "np.angle(Z)"),
+        # Linear algebra
+        ("det(A)", "np.linalg.det(A)"),
+        ("inv(A)", "np.linalg.inv(A)"),
+        ("pinv(A)", "np.linalg.pinv(A)"),
+        ("diag(v)", "np.diag(v)"),
+        ("trace(A)", "np.trace(A)"),
+        ("triu(A)", "np.triu(A)"),
+        ("tril(A)", "np.tril(A)"),
+        ("cross(a, b)", "np.cross(a, b)"),
+        ("kron(A, B)", "np.kron(A, B)"),
+        # FFT family
+        ("ifft(X)", "np.fft.ifft(X)"),
+        ("fftshift(X)", "np.fft.fftshift(X)"),
+        ("ifftshift(X)", "np.fft.ifftshift(X)"),
+        # Array manipulation / predicates
+        ("squeeze(A)", "np.squeeze(A)"),
+        ("flipud(A)", "np.flipud(A)"),
+        ("unique(x)", "np.unique(x)"),
+        ("any(x)", "np.any(x)"),
+        ("all(x)", "np.all(x)"),
+        # Constructors
+        ("ones(2, 5)", "np.ones((2, 5))"),
+        ("ones(3)", "np.ones(3)"),
+        ("ones(m, n)", "np.ones((m, n))"),
+        ("logspace(0, 2, 50)", "np.logspace(0, 2, 50)"),
+        ("rand(3, 5)", "np.random.rand(3, 5)"),
+        ("rand(size(X))", "np.random.rand(*X.shape)"),
+    ],
+)
+def test_extended_builtin_rules(matlab, expected):
+    assert apply_builtin_rule(matlab) == expected
+
+
+@pytest.mark.parametrize(
+    "matlab,expected",
+    [
+        ("atan2(sin(y), cos(x))", "np.arctan2(np.sin(y), np.cos(x))"),
+        ("inv(det(A))", "np.linalg.inv(np.linalg.det(A))"),
+        ("kron(eye(2), ones(2, 2))", "np.kron(np.eye(2), np.ones((2, 2)))"),
+        ("angle(fft(x))", "np.angle(np.fft.fft(x))"),
+        ("real(ifft(Y))", "np.real(np.fft.ifft(Y))"),
+    ],
+)
+def test_extended_builtin_rules_nested(matlab, expected):
+    assert apply_builtin_rule(matlab) == expected
+
+
 class TestSpecialistBuiltinRules(unittest.TestCase):
     """MATLAB toolbox calls wired to specialist_lib functions via the
     Rulebook's builtin table.  Each must translate to a specialist_lib
