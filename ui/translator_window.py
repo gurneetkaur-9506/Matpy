@@ -120,7 +120,7 @@ class TranslatorWindow(QMainWindow):
         self.details_widget = QWidget()
         details_row = QHBoxLayout()
         details_row.addWidget(QLabel("Stage status:"))
-        for stage in ("reader", "inference", "rulebook", "checker"):
+        for stage in ("reader", "inference", "rulebook", "validation", "checker"):
             label = QLabel("%s: pending" % stage.title())
             label.setStyleSheet(_MARKER_STYLE["pending"])
             self.section_labels[stage] = label
