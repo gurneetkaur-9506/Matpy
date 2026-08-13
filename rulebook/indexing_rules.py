@@ -143,6 +143,81 @@ def _convert_range_part(part, is_start):
     return apply_indexing_rule(part)
 
 
+def _split_range_parts(expr):
+    """Split a range expression on top-level colons into its parts
+    (start, step, stop for a 3-part range, start, stop for a 2-part one)."""
+    parts = []
+    depth = 0
+    current = ""
+    for ch in expr:
+        if ch in "([":
+            depth += 1
+        elif ch in ")]":
+            depth -= 1
+        if ch == ":" and depth == 0:
+            parts.append(current)
+            current = ""
+        else:
+            current += ch
+    parts.append(current)
+    return parts
+
+
+def _convert_reverse_slice_start(start):
+    """Convert a MATLAB range start into a Python negative-step slice start:
+    ``end`` -> ``-1``, ``end-k`` -> ``-(k+1)``, integer ``n`` -> ``n-1``; a
+    plain identifier passes through (its value shifts together with the
+    driving loop, matching the shared primitive's convention).  Returns None
+    when the start cannot be converted."""
+    patterns = INDEXING_RULES["patterns"]
+    if start == INDEXING_RULES["end_keyword"]:
+        return "-1"
+    match = re.fullmatch(patterns["end_minus_int"], start)
+    if match:
+        return "-%d" % (int(match.group(1)) + 1)
+    if re.fullmatch(patterns["integer"], start):
+        return shift_index(start, FORWARD)
+    if re.fullmatch(patterns["identifier"], start):
+        return start
+    return None
+
+
+def _convert_reverse_slice_stop(stop):
+    """Convert a MATLAB range stop into a Python negative-step slice stop.
+    A literal stop ``e`` is inclusive in MATLAB and maps to the exclusive
+    Python bound ``e - 1``; ``e == 1`` maps to an omitted stop so index 0 is
+    still included (a negative-step slice with an explicit stop of 0 would
+    drop the first element).  Identifiers pass through; other expressions are
+    not convertible."""
+    patterns = INDEXING_RULES["patterns"]
+    if re.fullmatch(patterns["integer"], stop):
+        value = int(stop)
+        if value == 1:
+            return ""
+        if value > 1:
+            return str(value - 1)
+        return None
+    if re.fullmatch(patterns["identifier"], stop):
+        return stop
+    return None
+
+
+def _convert_reverse_slice(parts):
+    """Convert a 3-part range with a negative integer step (``start:-s:stop``)
+    into a Python slice with that negative step.  MATLAB's inclusive stop
+    maps onto Python's exclusive bound with an extra shift for negative steps,
+    so both bounds move down by one.  Returns the slice string, or None when a
+    part is not a simple convertible index."""
+    start, step, stop = (p.strip() for p in parts)
+    start_py = _convert_reverse_slice_start(start)
+    stop_py = _convert_reverse_slice_stop(stop)
+    if start_py is None or stop_py is None:
+        return None
+    if stop_py:
+        return "%s:%s:%s" % (start_py, stop_py, step)
+    return "%s::%s" % (start_py, step)
+
+
 def apply_indexing_rule(expr):
     """Translate a MATLAB index expression into Python.
 
@@ -182,6 +257,13 @@ def apply_indexing_rule(expr):
 
     match = re.fullmatch(patterns["range"], expr)
     if match:
+        parts = _split_range_parts(expr)
+        if len(parts) == 3:
+            step = parts[1].strip()
+            if re.fullmatch(r"-([0-9]+)", step):
+                converted = _convert_reverse_slice(parts)
+                if converted is not None:
+                    return converted
         start = _convert_range_part(match.group(1), is_start=True)
         stop = _convert_range_part(match.group(2), is_start=False)
         return "%s:%s" % (start, stop)

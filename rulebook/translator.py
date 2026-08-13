@@ -27,7 +27,7 @@ from .operator_rules import (
     apply_transpose_rule,
     is_known_scalar,
 )
-from .shape_inference import infer_shapes
+from .shape_inference import MATRIX, VECTOR, infer_shapes
 from .scan_rules import (
 
     translate_feof_loop,
@@ -38,6 +38,34 @@ from .scan_rules import (
 from .sequence_rules import apply_sequence_rule_reverse
 
 UNRESOLVED = "UNRESOLVED"
+
+
+class _ScalarScope(set):
+    """A set of known-scalar names that also records the names the inference
+    pass proved to be definite non-scalars (vector/matrix).  The extra
+    attribute rides along the same ``scalars`` argument that every
+    expression-translation call site already threads, so an operator rule can
+    distinguish a proven array (matrix power) from an unknown operand
+    (element-wise power) without a second threaded container."""
+
+    def __init__(self, *args, non_scalars=None):
+        super().__init__(*args)
+        self.non_scalars = non_scalars or set()
+
+
+def _non_scalar_names(shapes, key, renames):
+    """Names the inference pass proved to be definite non-scalars (vector or
+    matrix) in the given scope, in the renamed identifier space."""
+    if shapes is None:
+        return set()
+    info = shapes.scope_for(key)
+    if info is None:
+        return set()
+    return {
+        renames.get(name, name)
+        for name, shape in info.shapes.items()
+        if shape in (VECTOR, MATRIX)
+    }
 
 _COMMANDS = {
     "clear": "",
@@ -649,6 +677,14 @@ def _translate_expr(expr, scalars=None, declared=None):
 
     idx, op = _find_last_operator(expr)
     if op is None:
+        # MATLAB logical NOT (``~flag``) binds looser than postfix transpose,
+        # so it is resolved first: ``~flag'`` must read ``~(flag')``.
+        not_match = re.match(r"^~\s*(.+)$", expr)
+        if not_match:
+            inner_py = _translate_expr(not_match.group(1), scalars, declared)
+            if inner_py == UNRESOLVED:
+                return UNRESOLVED
+            return "np.logical_not(%s)" % inner_py
         # MATLAB postfix transpose (expr' / expr.') applies to any
         # expression -- a variable, a call result, an indexed expression,
         # or a parenthesized compound -- and binds more tightly than any
@@ -680,11 +716,24 @@ def _translate_expr(expr, scalars=None, declared=None):
         return "%s * %s" % (left_py, right_py)
     if op == "./":
         return "%s / %s" % (left_py, right_py)
+    if op == ".\\":
+        # MATLAB element-wise left division: a .\ b is b ./ a element-wise.
+        return "%s / %s" % (right_py, left_py)
     if op == ".^":
         return "%s ** %s" % (left_py, right_py)
     if op == "^":
-        # MATLAB '^' is matrix power, but for scalar operands (2^3) it is
-        # identical to element-wise power and maps to Python '**'.
+        # MATLAB '^' is matrix power; scalar operands (2^3) are identical to
+        # element-wise power and map to Python '**'.  A base the inference
+        # pass proved to be a definite non-scalar (or a matrix literal)
+        # becomes an explicit matrix power; an unknown operand keeps the
+        # element-wise '**' because matrix_power fails at runtime on scalars.
+        left_raw = expr[:idx].strip()
+        non_scalars = getattr(scalars, "non_scalars", None)
+        if non_scalars and re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", left_raw):
+            if left_raw in non_scalars:
+                return "np.linalg.matrix_power(%s, %s)" % (left_py, right_py)
+        if left_raw.startswith("[") and left_raw.endswith("]"):
+            return "np.linalg.matrix_power(%s, %s)" % (left_py, right_py)
         return "%s ** %s" % (left_py, right_py)
     if op == "/":
         # Matrix right-division only when both operands are arrays; a
@@ -694,6 +743,18 @@ def _translate_expr(expr, scalars=None, declared=None):
         ):
             return "%s / %s" % (left_py, right_py)
         return "np.linalg.solve(%s.T, %s.T).T" % (right_py, left_py)
+    if op == "\\":
+        # MATLAB '\' is matrix left-division (solve a * x = b -> x = a \ b);
+        # a scalar operand makes it element-wise (a \ b is b ./ a).
+        if _is_scalar(expr[:idx], scalars) or _is_scalar(
+            expr[idx + len(op):], scalars
+        ):
+            return "%s / %s" % (right_py, left_py)
+        return "np.linalg.solve(%s, %s)" % (left_py, right_py)
+    if op == "&":
+        return "np.logical_and(%s, %s)" % (left_py, right_py)
+    if op == "|":
+        return "np.logical_or(%s, %s)" % (left_py, right_py)
     if op == "~=":
         return "%s != %s" % (left_py, right_py)
     if op in ("+", "-"):
@@ -1253,7 +1314,10 @@ def _translate_function(func, shapes=None):
         func.statements, func.parameters, func.outputs, func.name
     )
     declared = {renames.get(p, p) for p in func.parameters}
-    scalars = {renames.get(p, p) for p in func.parameters}
+    scalars = _ScalarScope(
+        (renames.get(p, p) for p in func.parameters),
+        non_scalars=_non_scalar_names(shapes, func.name, renames),
+    )
     if shapes is not None:
         # Enrich the scalar set with names the inference pass proved to be
         # definite scalars (assigned exactly once), so '/' and '*' involving
@@ -1288,10 +1352,12 @@ def translate_with_rulebook(structure, shapes=None):
     result = {"functions": [], "statements": []}
     for func in structure.functions:
         result["functions"].append(_translate_function(func, shapes))
-    scalars = set()
+    renames, first_seen = _compute_renames(structure.statements)
+    scalars = _ScalarScope(
+        non_scalars=_non_scalar_names(shapes, "top", renames)
+    )
     declared = set()
     io = {}
-    renames, first_seen = _compute_renames(structure.statements)
     if shapes is not None:
         for name in shapes.scalar_names("top"):
             scalars.add(renames.get(name, name))

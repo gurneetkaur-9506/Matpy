@@ -193,10 +193,18 @@ def _find_last_operator(expr):
             i -= 1
         return None
 
-    # Lowest precedence first: relational (~=), then additive (+/-), then
-    # multiplicative (* / .* ./). Splitting at the lowest-precedence operator
-    # keeps a + b * c grouped as a + (b * c), so scalar/matrix decisions are
-    # made on the true operands.
+    # Lowest precedence first: logical and/or, then relational (~=), then
+    # additive (+/-), then multiplicative (* / .* ./ .\), then power.
+    # Splitting at the lowest-precedence operator keeps a + b * c grouped as
+    # a + (b * c), so scalar/matrix decisions are made on the true operands.
+    idx = _find("&|")
+    if idx is not None:
+        if idx > 0 and expr[idx] == expr[idx - 1]:
+            # A doubled operator ('&&'/'||', MATLAB's short-circuit scalar
+            # forms) is not handled here; leave it unsplit for passthrough.
+            return None, None
+        return idx, expr[idx]
+
     idx = _find("~=")
     if idx is not None and idx > 0 and expr[idx - 1] == "~":
         return idx - 1, "~="
@@ -206,25 +214,20 @@ def _find_last_operator(expr):
         j = idx - 1
         while j >= 0 and expr[j].isspace():
             j -= 1
-        if j >= 0 and (expr[j].isalnum() or expr[j] in ")]_."):
+        # A binary '+'/'-' must have a real left operand; a postfix transpose
+        # quote (x' + y') is part of that operand.
+        if j >= 0 and (expr[j].isalnum() or expr[j] in ")]_.'"):
             return idx, expr[idx]
 
-    idx = _find("*/")
+    idx = _find("*/\\")
     if idx is not None:
         if (
-            expr[idx] == "*"
-            and idx > 0
+            idx > 0
+            and expr[idx] in "*/\\"
             and expr[idx - 1] == "."
             and (idx - 1) not in protected
         ):
-            return idx - 1, ".*"
-        if (
-            expr[idx] == "/"
-            and idx > 0
-            and expr[idx - 1] == "."
-            and (idx - 1) not in protected
-        ):
-            return idx - 1, "./"
+            return idx - 1, ".%s" % expr[idx]
         return idx, expr[idx]
 
     # Element-wise power (.^) binds tighter than every multiplicative
@@ -306,6 +309,13 @@ def apply_operator_rule(expr, scalars=None):
     expr = expr.strip()
     idx, op = _find_last_operator(expr)
     if op is None:
+        # MATLAB logical NOT is a unary prefix operator (``~flag``); it binds
+        # looser than postfix transpose, so it is resolved before the
+        # transpose split so ``~flag'`` reads as ``~(flag')``.
+        not_match = re.match(r"^~\s*(.+)$", expr)
+        if not_match:
+            inner = apply_operator_rule(not_match.group(1), scalars)
+            return "np.logical_not(%s)" % inner
         transposed = _split_transpose(expr)
         if transposed is not None:
             base, transpose_kind = transposed
@@ -327,11 +337,24 @@ def apply_operator_rule(expr, scalars=None):
         return "%s * %s" % (left, right)
     if op == "./":
         return "%s / %s" % (left, right)
+    if op == ".\\":
+        # MATLAB element-wise left division: a .\ b is b ./ a element-wise.
+        return "%s / %s" % (right, left)
     if op == ".^":
         return "%s ** %s" % (left, right)
     if op == "^":
-        # MATLAB '^' is matrix power, but for scalar operands (2^3) it is
-        # identical to element-wise power and maps to Python '**'.
+        # MATLAB '^' is matrix power; only scalar operands (2^3) map to the
+        # identical element-wise Python '**'.  A matrix-literal base becomes
+        # an explicit matrix power (A^2 -> np.linalg.matrix_power(A, 2));
+        # an unknown base keeps '**', since matrix_power fails at runtime on
+        # scalars and the pipeline decides via inference shape knowledge.
+        left_raw = expr[:idx].strip()
+        if is_known_scalar(expr[:idx], scalars) and is_known_scalar(
+            expr[idx + len(op):], scalars
+        ):
+            return "%s ** %s" % (left, right)
+        if left_raw.startswith("[") and left_raw.endswith("]"):
+            return "np.linalg.matrix_power(%s, %s)" % (left, right)
         return "%s ** %s" % (left, right)
     if op == "/":
         # MATLAB '/' is matrix right-division (solve a * x = b) ONLY when
@@ -342,6 +365,16 @@ def apply_operator_rule(expr, scalars=None):
             return "%s / %s" % (left, right)
         template = OPERATOR_RULES["matrix_right_divide"]["python"]
         return template % (right, left)
+    if op == "\\":
+        # MATLAB '\' is matrix left-division (solve a * x = b -> x = a \ b);
+        # a scalar operand makes it element-wise (a \ b is b ./ a).
+        if is_scalar_like(expr[:idx]) or is_scalar_like(expr[idx + len(op):]):
+            return "%s / %s" % (right, left)
+        return "np.linalg.solve(%s, %s)" % (left, right)
+    if op == "&":
+        return "np.logical_and(%s, %s)" % (left, right)
+    if op == "|":
+        return "np.logical_or(%s, %s)" % (left, right)
     if op in ("+", "-"):
         # Rebuild so postfix transposes on the operands (e.g. ``A + B'``)
         # are preserved; '+'/'-' map to themselves.
