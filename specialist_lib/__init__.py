@@ -3,6 +3,7 @@ from .awgn import awgn
 from .beamform import beamform
 from .chirp import chirp
 from .conv import conv
+from .linalg_tools import eig, svd
 from .read_scan_file import format_spec_to_columns, read_matlab_scan_file
 from .signal_tools import (
     detrend,
@@ -22,6 +23,7 @@ __all__ = [
     "chirp",
     "conv",
     "detrend",
+    "eig",
     "filter_with_state",
     "findpeaks",
     "format_spec_to_columns",
@@ -30,5 +32,6 @@ __all__ = [
     "read_matlab_scan_file",
     "square",
     "steering_vector",
+    "svd",
     "xcorr",
 ]

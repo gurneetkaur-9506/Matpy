@@ -10,7 +10,13 @@ is built from four cooperating blocks and is fully offline at runtime.
 - **Rulebook-driven** — declarative mappings for indexing, loops, operators,
   builtins, plotting commands, and multi-output assignments.
 - **Specialist library** — focused numpy/scipy idioms for array factor,
-  beamforming, steering vectors, AWGN, chirp, convolution, and scan-file I/O.
+  beamforming, steering vectors, AWGN, chirp, convolution, and scan-file I/O,
+  plus a broad set of numerical, signal-processing and engineering mappings
+  (scipy.signal filters and windows, linear algebra, polynomials, FFT2/FFTN,
+  sinc, unwrap, and MATLAB-order `eig`/`svd` wrappers).
+- **Lightweight symbolic analysis** — an offline, advisory stage that detects
+  constants, algebraic simplifications and guaranteed math properties in the
+  translated output, with no AI, cloud service or MATLAB runtime involved.
 - **Numeric verification** — the Checker checks the translated output for
   internal consistency against a deterministic seeded reference derived from
   the original source and the supplied inputs, with no MATLAB runtime required.
@@ -128,11 +134,58 @@ numpy/scipy equivalent. The wired mappings are:
 | `steervec(...)` | `specialist_lib.steering_vector` |
 | `phased.ArrayResponse(...)` | `specialist_lib.array_factor` |
 | `phased.Beamformer(...)` | `specialist_lib.beamform` |
+| `[V, D] = eig(...)` | `specialist_lib.eig` |
+| `[U, S, V] = svd(...)` | `specialist_lib.svd` |
 
 The `fscanf` file-reading idiom is wired separately through the scan rules
 (`rulebook/scan_rules.py`), which emit `specialist_lib.read_matlab_scan_file`.
 Its companion `format_spec_to_columns` is an internal helper called by that
 function and is never emitted directly by the Rulebook.
+
+Beyond the specialist_lib calls above, the Rulebook's builtin table
+(`rulebook/builtin_rules.py`) maps a large set of reliable numpy/scipy
+equivalents whose argument lists match MATLAB's, so they need no wrapper:
+
+- **scipy.signal** — `butter`, `cheby1`, `cheby2`, `ellip`, `filter` ->
+  `lfilter`, `filtfilt`, `freqz`, `sosfilt`, `upfirdn`, `hilbert`, `conv2`,
+  `decimate`, `resample` -> `resample_poly`, `sawtooth`, `periodogram`,
+  `pwelch`/`welch`, and the `scipy.signal.windows` family (`hann`, `hamming`,
+  `blackman`, `kaiser`, `bartlett`, `triang`, `tukeywin`, `flattopwin`,
+  `barthannwin`, `blackmanharris`, `nuttallwin`, `chebwin`).
+- **linear algebra** — `norm`, `cond`, `rank`, `chol`, `qr`, `eig`
+  (single-output -> `np.linalg.eigvals`), `expm`, `logm`, `sqrtm`,
+  `toeplitz`, `hankel`, `svd` (single-output keeps the singular-value
+  vector).
+- **numerical / engineering** — `polyfit`, `polyval`, `roots`, `polyint`,
+  `polyder`, `gradient`, `trapz`, `unwrap`, `sinc`, `conj`, `fft2`, `ifft2`,
+  `fftn`, `ifftn`.
+
+When the raw numpy/scipy call would not preserve MATLAB's calling contract,
+a thin `specialist_lib` wrapper restores it instead: `eig`/`svd` return the
+eigenvector matrix and the diagonal `S`/`D` in MATLAB's order, `square` takes
+the duty cycle in percent, `findpeaks` returns 1-based locations,
+`detrend`/`medfilt1`/`filter_with_state`/`xcorr`/`freqz` restore MATLAB's
+defaults and argument order.
+
+### Symbolic Analysis
+
+A lightweight, purely offline advisory stage (`rulebook/symbolic.py`) runs
+after the Rulebook produces Python and before the Checker. It parses each
+emitted statement with `ast` and produces insights with a confidence level,
+never rejecting or rewriting code:
+
+- **constant_detection** — an RHS with no free variables folds to a value
+  (`2 * pi`, `np.sqrt(4)`, `np.hypot(3, 4)`).
+- **simplification** — algebraic identities visible in the code
+  (`0 * x == 0`, `x - x == 0`, `-(-x) == x`, `np.conj(np.conj(z)) == z`,
+  `x ** 0 == 1`, ...).
+- **math_reasoning** — properties that hold for all real inputs
+  (`abs(x) >= 0`, `x ** 2 >= 0`, `exp(x) > 0`, `sin`/`cos`/`sinc` bounded in
+  `[-1, 1]`, `tanh` bounded in `(-1, 1)`, `arccos` bounded in `[0, pi]`, ...).
+
+It uses only the Python standard library (`ast`, `math`); no AI models, cloud
+services, or runtime execution are involved. Each result reports the stage as
+`result["sections"]["symbolic"]` with the insights and per-category counts.
 
 ### Checker
 
@@ -250,5 +303,6 @@ python -m pytest tests/
 ```
 
 The suite covers translation rules (forward and reverse), indexing, operators,
-specialists, the checker, and pipeline resilience. It runs fully offline with
-no external server required.
+specialists (including the numerical/signal-processing mappings and the
+MATLAB-order `eig`/`svd` wrappers), symbolic analysis, the checker, and
+pipeline resilience. It runs fully offline with no external server required.

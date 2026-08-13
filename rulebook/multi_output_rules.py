@@ -61,9 +61,14 @@ MULTI_OUTPUT_RULES = {
     "find": {"kind": "where"},
     "meshgrid": {"kind": "meshgrid"},
     "butter": {"kind": "tuple", "call": "scipy.signal.butter"},
+    "cheby1": {"kind": "tuple", "call": "scipy.signal.cheby1"},
+    "cheby2": {"kind": "tuple", "call": "scipy.signal.cheby2"},
+    "eig": {"kind": "tuple", "call": "specialist_lib.eig"},
+    "ellip": {"kind": "tuple", "call": "scipy.signal.ellip"},
     "filter": {"kind": "tuple", "call": "specialist_lib.filter_with_state"},
     "findpeaks": {"kind": "tuple", "call": "specialist_lib.findpeaks"},
     "freqz": {"kind": "tuple", "call": "specialist_lib.freqz"},
+    "svd": {"kind": "tuple", "call": "specialist_lib.svd"},
     "xcorr": {"kind": "tuple", "call": "specialist_lib.xcorr"},
 }
 

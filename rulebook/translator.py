@@ -4,7 +4,12 @@ import re
 from reader.extract_structure import split_range
 
 from .attribute_rules import apply_attribute_rule_reverse
-from .builtin_rules import BUILTIN_RULES, apply_builtin_rule, apply_builtin_rule_reverse
+from .builtin_rules import (
+    BUILTIN_RULES,
+    _REVERSE_BUILTIN_MAP,
+    apply_builtin_rule,
+    apply_builtin_rule_reverse,
+)
 from .complex_rules import apply_complex_rule
 from .format_rules import convert_fprintf
 from .indexing_rules import apply_indexing_rule, apply_indexing_rule_reverse
@@ -1643,29 +1648,13 @@ _PY_NP_NAME = re.compile(r"\bnp\.[A-Za-z_][A-Za-z0-9_.]*")
 
 # np.-prefixed names that have a working reverse rule back to MATLAB.
 # Any other np. name (e.g. np.pi, np.newaxis, np.mean) has no reverse rule
-# and must never pass through as if it were valid MATLAB.
-_PY_NP_ALLOWED_REVERSE = frozenset(
-    {
-        "np.abs",
-        "np.array",
-        "np.ceil",
-        "np.cos",
-        "np.exp",
-        "np.fft.fft",
-        "np.floor",
-        "np.linalg.solve",
-        "np.linspace",
-        "np.log",
-        "np.random.randn",
-        "np.reshape",
-        "np.round",
-        "np.sin",
-        "np.sqrt",
-        "np.tan",
-        "np.trunc",
-        "np.zeros",
-    }
-)
+# and must never pass through as if it were valid MATLAB.  Derived from the
+# reverse builtin map so the set stays in sync with the forward rules; the
+# two extras are handled by dedicated reverse paths, not the builtin table.
+_PY_NP_ALLOWED_REVERSE = frozenset(_REVERSE_BUILTIN_MAP.keys()) | {
+    "np.array",
+    "np.linalg.solve",
+}
 
 
 def _strip_string_literals(text):

@@ -175,10 +175,44 @@ class TestReverseIdenticalNamingBuiltins(unittest.TestCase):
         ("np.any(x)", "any(x)"),
         ("np.all(x)", "all(x)"),
         ("np.logspace(0, 2, 50)", "logspace(0, 2, 50)"),
+        ("np.conj(z)", "conj(z)"),
+        ("np.gradient(y)", "gradient(y)"),
+        ("np.unwrap(ph)", "unwrap(ph)"),
+        ("np.sinc(t)", "sinc(t)"),
+        ("np.trapezoid(y, x)", "trapz(y, x)"),
+        ("np.polyfit(x, y, 2)", "polyfit(x, y, 2)"),
+        ("np.polyval(p, x)", "polyval(p, x)"),
+        ("np.roots(p)", "roots(p)"),
+        ("np.polyint(p)", "polyint(p)"),
+        ("np.polyder(p)", "polyder(p)"),
+        ("np.fft.fft2(X)", "fft2(X)"),
+        ("np.fft.ifft2(Y)", "ifft2(Y)"),
+        ("np.fft.fftn(X)", "fftn(X)"),
+        ("np.fft.ifftn(Y)", "ifftn(Y)"),
+        ("np.linalg.eigvals(A)", "eig(A)"),
+        ("np.linalg.norm(A)", "norm(A)"),
+        ("np.linalg.cond(A)", "cond(A)"),
+        ("np.linalg.matrix_rank(A)", "rank(A)"),
+        ("np.linalg.cholesky(A)", "chol(A)"),
+        ("np.linalg.qr(A)", "qr(A)"),
     ],
 )
 def test_extended_builtin_rules_reverse(python, matlab):
     assert apply_builtin_rule_reverse(python) == matlab
+
+
+def test_svd_single_output_not_reversed():
+    # svd's single-output mode emits compute_uv=False, which has no MATLAB
+    # equivalent and must stay untouched rather than become invalid MATLAB.
+    assert (
+        apply_builtin_rule_reverse("np.linalg.svd(A, compute_uv=False)")
+        == "np.linalg.svd(A, compute_uv=False)"
+    )
+
+
+def test_np_ones_prefers_canonical_name():
+    # Both rectwin and ones map to np.ones; the reverse must prefer 'ones'.
+    assert apply_builtin_rule_reverse("np.ones(16)") == "ones(16)"
 
 
 class TestExtendedBuiltinRulesReverseDims(unittest.TestCase):

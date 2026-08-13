@@ -99,6 +99,73 @@ class TestMathReasoning(unittest.TestCase):
         )
         self.assertEqual(insight["confidence"], HIGH)
 
+    def test_sinc_bounded(self):
+        insight = next(
+            i for i in analyze_expression("np.sinc(t)") if i["category"] == "math_reasoning"
+        )
+        self.assertEqual(insight["confidence"], MEDIUM)
+        self.assertIn("[-1, 1]", insight["message"])
+
+    def test_tanh_bounded(self):
+        insight = next(
+            i for i in analyze_expression("np.tanh(x)") if i["category"] == "math_reasoning"
+        )
+        self.assertEqual(insight["confidence"], MEDIUM)
+        self.assertIn("(-1, 1)", insight["message"])
+
+    def test_inverse_trig_bounded(self):
+        cases = {
+            "np.arcsin(x)": "[-pi/2, pi/2]",
+            "np.arccos(x)": "[0, pi]",
+            "np.arctan(x)": "(-pi/2, pi/2)",
+        }
+        for expr, bound in cases.items():
+            with self.subTest(expr=expr):
+                insight = next(
+                    i for i in analyze_expression(expr)
+                    if i["category"] == "math_reasoning"
+                )
+                self.assertEqual(insight["confidence"], MEDIUM)
+                self.assertIn(bound, insight["message"])
+
+
+class TestExtendedSimplification(unittest.TestCase):
+    def test_double_conjugation(self):
+        insight = next(
+            i for i in analyze_expression("np.conj(np.conj(z))")
+            if i["category"] == "simplification"
+        )
+        self.assertEqual(insight["confidence"], HIGH)
+        self.assertIn("conjugates a conjugate", insight["message"])
+
+    def test_subtract_from_zero_is_negation(self):
+        insight = next(
+            i for i in analyze_expression("0 - a") if i["category"] == "simplification"
+        )
+        self.assertEqual(insight["confidence"], LOW)
+        self.assertIn("negation", insight["message"])
+
+
+class TestExtendedConstantFolding(unittest.TestCase):
+    def test_hypot_folds(self):
+        insight = next(
+            i for i in analyze_expression("np.hypot(3, 4)")
+            if i["category"] == "constant_detection"
+        )
+        self.assertEqual(insight["confidence"], HIGH)
+        self.assertIn("5.0", insight["message"])
+
+    def test_tau_folds(self):
+        insight = next(
+            i for i in analyze_expression("np.tau * 2")
+            if i["category"] == "constant_detection"
+        )
+        self.assertIn("12.56637", insight["message"])
+
+    def test_hypot_with_free_variable_not_constant(self):
+        categories = [i["category"] for i in analyze_expression("np.hypot(3, x)")]
+        self.assertNotIn("constant_detection", categories)
+
 
 class TestPipelineIntegration(unittest.TestCase):
     def test_symbolic_section_populated_forward(self):

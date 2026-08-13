@@ -337,6 +337,24 @@ def test_specialist_nested_arguments_translate(matlab, expected):
         ("hamming(64)", "scipy.signal.windows.hamming(64)"),
         ("blackman(64)", "scipy.signal.windows.blackman(64)"),
         ("kaiser(64, 5)", "scipy.signal.windows.kaiser(64, 5)"),
+        ("cheby1(4, 3, 0.2)", "scipy.signal.cheby1(4, 3, 0.2)"),
+        ("cheby2(4, 20, 0.2)", "scipy.signal.cheby2(4, 20, 0.2)"),
+        ("ellip(4, 1, 40, [0.2, 0.5])", "scipy.signal.ellip(4, 1, 40, [0.2, 0.5])"),
+        ("sosfilt(sos, x)", "scipy.signal.sosfilt(sos, x)"),
+        ("upfirdn(h, x, 3, 2)", "scipy.signal.upfirdn(h, x, 3, 2)"),
+        ("hilbert(x)", "scipy.signal.hilbert(x)"),
+        ("periodogram(x, fs)", "scipy.signal.periodogram(x, fs)"),
+        ("welch(x)", "scipy.signal.welch(x)"),
+        ("pwelch(x)", "scipy.signal.welch(x)"),
+        ("bartlett(64)", "scipy.signal.windows.bartlett(64)"),
+        ("triang(64)", "scipy.signal.windows.triang(64)"),
+        ("barthannwin(32)", "scipy.signal.windows.barthann(32)"),
+        ("blackmanharris(128)", "scipy.signal.windows.blackmanharris(128)"),
+        ("nuttallwin(64)", "scipy.signal.windows.nuttall(64)"),
+        ("flattopwin(64)", "scipy.signal.windows.flattop(64)"),
+        ("chebwin(64, 60)", "scipy.signal.windows.chebwin(64, 60)"),
+        ("tukeywin(64, 0.5)", "scipy.signal.windows.tukey(64, 0.5)"),
+        ("rectwin(16)", "np.ones(16)"),
     ],
 )
 def test_scipy_signal_builtin_rules(matlab, expected):
@@ -390,6 +408,107 @@ def test_scipy_signal_nested_arguments_translate(matlab, expected):
     ],
 )
 def test_scipy_signal_multi_output(matlab, expected):
+    from rulebook.multi_output_rules import translate_multi_output_assignment
+
+    lines = translate_multi_output_assignment(
+        matlab.split("=")[0].strip(), matlab.split("=")[1].strip(), lambda a: a
+    )
+    assert lines is not None
+    assert lines[0] == expected
+
+
+@pytest.mark.parametrize(
+    "matlab,expected",
+    [
+        # Normal (positional) arguments for numerical / linear-algebra /
+        # engineering mappings.
+        ("norm(A)", "np.linalg.norm(A)"),
+        ("norm(A, 'fro')", "np.linalg.norm(A, 'fro')"),
+        ("cond(A)", "np.linalg.cond(A)"),
+        ("rank(A)", "np.linalg.matrix_rank(A)"),
+        ("chol(A)", "np.linalg.cholesky(A)"),
+        ("qr(A)", "np.linalg.qr(A)"),
+        ("eig(A)", "np.linalg.eigvals(A)"),
+        ("expm(A)", "scipy.linalg.expm(A)"),
+        ("logm(A)", "scipy.linalg.logm(A)"),
+        ("sqrtm(A)", "scipy.linalg.sqrtm(A)"),
+        ("toeplitz(c)", "scipy.linalg.toeplitz(c)"),
+        ("hankel(c)", "scipy.linalg.hankel(c)"),
+        ("polyfit(x, y, 2)", "np.polyfit(x, y, 2)"),
+        ("polyval(p, x)", "np.polyval(p, x)"),
+        ("roots(p)", "np.roots(p)"),
+        ("polyint(p)", "np.polyint(p)"),
+        ("polyder(p)", "np.polyder(p)"),
+        ("gradient(y)", "np.gradient(y)"),
+        ("trapz(y, x)", "np.trapezoid(y, x)"),
+        ("unwrap(ph)", "np.unwrap(ph)"),
+        ("sinc(t)", "np.sinc(t)"),
+        ("conj(z)", "np.conj(z)"),
+        ("fft2(X)", "np.fft.fft2(X)"),
+        ("ifft2(Y)", "np.fft.ifft2(Y)"),
+        ("fftn(X)", "np.fft.fftn(X)"),
+        ("ifftn(Y)", "np.fft.ifftn(Y)"),
+        # Single-output svd keeps the singular-value vector.
+        ("svd(A)", "np.linalg.svd(A, compute_uv=False)"),
+    ],
+)
+def test_numerical_engineering_builtin_rules(matlab, expected):
+    """MATLAB numerical/engineering calls map onto numpy/scipy equivalents."""
+    assert apply_builtin_rule(matlab) == expected
+
+
+@pytest.mark.parametrize(
+    "matlab,expected",
+    [
+        # Option/name-value arguments after the positional ones stay put.
+        ("pwelch(x, 256)", "scipy.signal.welch(x, 256)"),
+        ("pwelch(x, 256, 128, 512, fs)", "scipy.signal.welch(x, 256, 128, 512, fs)"),
+        ("cheby1(4, 3, 0.2, 's')", "scipy.signal.cheby1(4, 3, 0.2, 's')"),
+        ("ellip(4, 1, 40, [0.2, 0.5], 'bandpass')", "scipy.signal.ellip(4, 1, 40, [0.2, 0.5], 'bandpass')"),
+        ("periodogram(x, [], 'power')", "scipy.signal.periodogram(x, [], 'power')"),
+        ("norm(A, 'inf')", "np.linalg.norm(A, 'inf')"),
+        ("polyfit(x, y, 2, 'west')", "np.polyfit(x, y, 2, 'west')"),
+        ("tukeywin(64, 0.5)", "scipy.signal.windows.tukey(64, 0.5)"),
+        ("blackmanharris(128)", "scipy.signal.windows.blackmanharris(128)"),
+        ("chebwin(64, 60)", "scipy.signal.windows.chebwin(64, 60)"),
+    ],
+)
+def test_numerical_engineering_option_arguments_passthrough(matlab, expected):
+    assert apply_builtin_rule(matlab) == expected
+
+
+@pytest.mark.parametrize(
+    "matlab,expected",
+    [
+        # Nested arguments inside numerical/engineering calls translate.
+        ("norm(abs(x))", "np.linalg.norm(np.abs(x))"),
+        ("qr(conv(A, B))", "np.linalg.qr(specialist_lib.conv(A, B))"),
+        ("polyval(p, fft(x))", "np.polyval(p, np.fft.fft(x))"),
+        ("gradient(sin(t))", "np.gradient(np.sin(t))"),
+        ("unwrap(angle(fft(x)))", "np.unwrap(np.angle(np.fft.fft(x)))"),
+        ("sinc(2 * pi * t)", "np.sinc(2 * pi * t)"),
+        ("hilbert(awgn(x, 10))", "scipy.signal.hilbert(specialist_lib.awgn(x, 10))"),
+        ("ellip(4, 1, 40, 2 * pi * fc / fs)", "scipy.signal.ellip(4, 1, 40, 2 * pi * fc / fs)"),
+        ("svd(A)", "np.linalg.svd(A, compute_uv=False)"),
+    ],
+)
+def test_numerical_engineering_nested_arguments_translate(matlab, expected):
+    assert apply_builtin_rule(matlab) == expected
+
+
+@pytest.mark.parametrize(
+    "matlab,expected",
+    [
+        ("[U, S, V] = svd(A)", "U, S, V = specialist_lib.svd(A)"),
+        ("[V, D] = eig(A)", "V, D = specialist_lib.eig(A)"),
+        ("[b, a] = cheby1(4, 3, 0.2)", "b, a = scipy.signal.cheby1(4, 3, 0.2)"),
+        ("[b, a] = cheby2(4, 20, 0.2)", "b, a = scipy.signal.cheby2(4, 20, 0.2)"),
+        ("[b, a] = ellip(4, 1, 40, [0.2, 0.5])", "b, a = scipy.signal.ellip(4, 1, 40, [0.2, 0.5])"),
+        ("[~, D] = eig(A)", "D = specialist_lib.eig(A)[1]"),
+        ("[S, ~, ~] = svd(A)", "S = specialist_lib.svd(A)[0]"),
+    ],
+)
+def test_numerical_engineering_multi_output(matlab, expected):
     from rulebook.multi_output_rules import translate_multi_output_assignment
 
     lines = translate_multi_output_assignment(

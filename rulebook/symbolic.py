@@ -53,14 +53,17 @@ _MATH_FUNCS = {
     "np.floor": math.floor,
     "np.ceil": math.ceil,
     "np.trunc": math.trunc,
+    "np.hypot": math.hypot,
     "abs": abs,
 }
 
 _CONSTANTS = {
     "np.pi": math.pi,
     "np.e": math.e,
+    "np.tau": math.tau,
     "math.pi": math.pi,
     "math.e": math.e,
+    "math.tau": math.tau,
     "pi": math.pi,
     "e": math.e,
 }
@@ -125,7 +128,13 @@ def _eval_constant(node):
     if isinstance(node, ast.Call):
         name = _fullname(node.func)
         fn = _MATH_FUNCS.get(name)
-        if fn is None or len(node.args) != 1 or node.keywords:
+        if fn is None or node.keywords:
+            raise _NotConstant()
+        if name == "np.hypot" and len(node.args) == 2:
+            return math.hypot(
+                _eval_constant(node.args[0]), _eval_constant(node.args[1])
+            )
+        if len(node.args) != 1:
             raise _NotConstant()
         return fn(_eval_constant(node.args[0]))
     raise _NotConstant()
@@ -195,6 +204,11 @@ def _identities(expr, source_text):
                     add("simplification", LOW,
                         "expression '%s' subtracts 0; the term is a no-op"
                         % _literal_text(sub))
+                elif lnum == 0:
+                    add("simplification", LOW,
+                        "expression '%s' subtracts from 0; the result is "
+                        "the negation of the subtracted term"
+                        % _literal_text(sub))
                 elif ast.dump(sub.left) == ast.dump(sub.right):
                     add("simplification", HIGH,
                         "expression '%s' subtracts a value from itself; the "
@@ -246,6 +260,16 @@ def _identities(expr, source_text):
                         add("simplification", HIGH,
                             "expression '%s' evaluates to %s at %s"
                             % (_literal_text(sub), known, value))
+            elif name == "np.conj" and len(sub.args) == 1:
+                inner = sub.args[0]
+                if (
+                    isinstance(inner, ast.Call)
+                    and _fullname(inner.func) == "np.conj"
+                    and len(inner.args) == 1
+                ):
+                    add("simplification", HIGH,
+                        "expression '%s' conjugates a conjugate; the result "
+                        "is %s" % (_literal_text(sub), _literal_text(inner.args[0])))
     return insights
 
 
@@ -286,6 +310,21 @@ def _math_reasoning(expr, source_text):
             elif name in ("np.sin", "np.cos") and len(sub.args) == 1:
                 add(MEDIUM,
                     "%s is bounded in [-1, 1]" % _literal_text(sub))
+            elif name == "np.sinc" and len(sub.args) == 1:
+                add(MEDIUM,
+                    "%s is bounded in [-1, 1]" % _literal_text(sub))
+            elif name == "np.tanh" and len(sub.args) == 1:
+                add(MEDIUM,
+                    "%s is bounded in (-1, 1)" % _literal_text(sub))
+            elif name == "np.arctan" and len(sub.args) == 1:
+                add(MEDIUM,
+                    "%s is bounded in (-pi/2, pi/2)" % _literal_text(sub))
+            elif name == "np.arcsin" and len(sub.args) == 1:
+                add(MEDIUM,
+                    "%s is bounded in [-pi/2, pi/2]" % _literal_text(sub))
+            elif name == "np.arccos" and len(sub.args) == 1:
+                add(MEDIUM,
+                    "%s is bounded in [0, pi]" % _literal_text(sub))
             elif name in ("np.sqrt",) and len(sub.args) == 1:
                 add(HIGH,
                     "%s is only defined for nonnegative inputs and is "
