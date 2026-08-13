@@ -29,7 +29,7 @@ class TestApplyIndexingRule(unittest.TestCase):
         self.assertEqual(apply_indexing_rule(":end"), ":")
 
     def test_length_in_range(self):
-        self.assertEqual(apply_indexing_rule("1:length(P2)/2+1"), "0:len(P2)/2+1")
+        self.assertEqual(apply_indexing_rule("1:length(P2)/2+1"), "0:len(P2)//2+1")
     def test_full_index_expr(self):
         self.assertEqual(apply_indexing_rule("A(1,1)"), "A[0, 0]")
         self.assertEqual(apply_indexing_rule("A(2,3)"), "A[1, 2]")

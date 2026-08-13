@@ -20,7 +20,9 @@ The primitive recognizes four forms of index:
 - an arithmetic index expression such as ``i + 1``, shifted by folding
   the offset into its trailing constant term (i + 1 -> i forward,
   i - 1 -> i reverse); an expression without a foldable constant is
-  wrapped instead (2*k -> (2*k) - 1 forward);
+  wrapped instead (2*k -> (2*k) - 1 forward); a top-level division is
+  emitted as floor division (n/2 -> n//2) because a Python slice bound
+  must be integer-valued, mirroring MATLAB's integer colon endpoints;
 - a slice/range such as ``2:5``, whose start bound is shifted by the
   direction offset while its stop bound stays unchanged (2:5 -> 1:5
   forward, 2:5 -> 3:5 reverse) -- MATLAB's inclusive stop maps onto
@@ -137,6 +139,41 @@ def _fold_constant_shift(expr, direction):
     return "%s %s %d" % (lhs, sign, abs(new_literal))
 
 
+def floor_divide_top_level(expr):
+    """Rewrite top-level ``/`` operators as floor division ``//`` so a
+    division-based index expression yields an integer value.
+
+    MATLAB colon-range endpoints are always integers; emitting a float
+    division as a Python slice bound would raise a TypeError at runtime.
+    Only top-level divisions are rewritten: an operator nested inside a
+    call or an indexed access (e.g. ``length(x/2)``) keeps its semantics.
+    """
+    depth = 0
+    out = []
+    i = 0
+    while i < len(expr):
+        ch = expr[i]
+        if ch in "([":
+            depth += 1
+            out.append(ch)
+            i += 1
+        elif ch in ")]":
+            depth -= 1
+            out.append(ch)
+            i += 1
+        elif ch == "/" and depth == 0:
+            if i + 1 < len(expr) and expr[i + 1] == "/":
+                out.append("//")
+                i += 2
+            else:
+                out.append("//")
+                i += 1
+        else:
+            out.append(ch)
+            i += 1
+    return "".join(out)
+
+
 def shift_index(expr, direction):
     """Shift an index expression between MATLAB and Python indexing.
 
@@ -186,12 +223,13 @@ def shift_index(expr, direction):
         shifted_start = shift_index(start, direction)
         if shifted_start == UNRESOLVED or _is_negative_literal(stop):
             return UNRESOLVED
-        return "%s:%s" % (shifted_start, stop)
+        return "%s:%s" % (shifted_start, floor_divide_top_level(stop))
     stripped = _strip_outer_parens(expr)
     if _is_arithmetic(stripped):
-        folded = _fold_constant_shift(stripped, direction)
+        int_safe = floor_divide_top_level(stripped)
+        folded = _fold_constant_shift(int_safe, direction)
         if folded is not None:
             return folded
         op = "- 1" if direction == FORWARD else "+ 1"
-        return "(%s) %s" % (stripped, op)
+        return "(%s) %s" % (int_safe, op)
     return expr

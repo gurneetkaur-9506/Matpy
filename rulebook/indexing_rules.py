@@ -1,6 +1,12 @@
 import re
 
-from .index_shift import FORWARD, REVERSE, UNRESOLVED, shift_index
+from .index_shift import (
+    FORWARD,
+    REVERSE,
+    UNRESOLVED,
+    floor_divide_top_level,
+    shift_index,
+)
 
 INDEXING_RULES = {
     "1_based_offset": 1,
@@ -111,7 +117,7 @@ def apply_indexing_rule_reverse(expr):
         stop = _convert_range_part_reverse(match.group(2), is_start=False)
         return "%s:%s" % (start, stop)
 
-    return expr.replace("len(", "length(")
+    return expr.replace("len(", "length(").replace("//", "/")
 
 
 def _convert_range_part(part, is_start):
@@ -180,4 +186,4 @@ def apply_indexing_rule(expr):
         stop = _convert_range_part(match.group(2), is_start=False)
         return "%s:%s" % (start, stop)
 
-    return expr.replace("length(", "len(")
+    return floor_divide_top_level(expr).replace("length(", "len(")

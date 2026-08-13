@@ -197,5 +197,42 @@ class TestShiftIndexValidation(unittest.TestCase):
             shift_index("1")
 
 
+class TestShiftIndexDivision(unittest.TestCase):
+    """A division-based index is emitted as floor division so a Python
+    slice bound stays integer-valued, matching MATLAB's integer colon
+    endpoints."""
+
+    def test_forward_length_half_plus_one(self):
+        self.assertEqual(shift_index("length(x)/2+1", FORWARD), "length(x)//2")
+
+    def test_forward_n_half_minus_one(self):
+        self.assertEqual(shift_index("n/2-1", FORWARD), "n//2 - 2")
+
+    def test_forward_length_third(self):
+        self.assertEqual(shift_index("length(x)/3", FORWARD), "(length(x)//3) - 1")
+
+    def test_forward_bare_half(self):
+        self.assertEqual(shift_index("n/2", FORWARD), "(n//2) - 1")
+
+    def test_forward_range_stop_division(self):
+        self.assertEqual(shift_index("2:n/2", FORWARD), "1:n//2")
+
+    def test_reverse_n_half_minus_one(self):
+        self.assertEqual(shift_index("n//2-1", REVERSE), "n//2")
+
+    def test_reverse_length_half(self):
+        self.assertEqual(shift_index("length(x)//2", REVERSE), "(length(x)//2) + 1")
+
+    def test_reverse_range_stop_division(self):
+        self.assertEqual(shift_index("2:n//2", REVERSE), "3:n//2")
+
+    def test_fft_basic_slice_bound_is_integer_safe(self):
+        from rulebook import apply_indexing_rule
+
+        self.assertEqual(
+            apply_indexing_rule("P2(1:length(P2)/2+1)"), "P2[0:len(P2)//2+1]"
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
