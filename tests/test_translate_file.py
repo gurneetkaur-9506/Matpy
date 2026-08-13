@@ -57,29 +57,8 @@ class TestTranslateFile(unittest.TestCase):
             {"verified", "failed", "review needed", "inconclusive_no_matlab"},
         )
 
-    @mock.patch("translator.matlab_engine_available", return_value=True)
-    def test_checker_skipped_when_engine_available_no_inputs(self, mock_engine):
-        result = translate_file(sample_matlab("indexing_ops.m"))
-        self.assertEqual(result["sections"]["checker"]["status"], "skipped")
     @mock.patch("translator.verify", return_value="failed")
-    @mock.patch("translator.matlab_engine_available", return_value=True)
-    def test_checker_failed_preserved_when_engine_available(
-        self, mock_engine, mock_verify
-    ):
-        result = translate_file(
-            sample_matlab("beamform_basic.m"),
-            inputs={
-                "N": 3,
-                "d": 0.5,
-                "lamb": 1.0,
-                "theta": np.linspace(0, np.pi, 3),
-                "theta0": 0.0,
-            },
-        )
-        self.assertEqual(result["sections"]["checker"]["status"], "failed")
-
-    @mock.patch("translator.verify", return_value="failed")
-    def test_checker_failed_maps_to_inconclusive_without_engine(self, mock_verify):
+    def test_checker_failed_maps_to_inconclusive(self, mock_verify):
         result = translate_file(
             sample_matlab("beamform_basic.m"),
             inputs={

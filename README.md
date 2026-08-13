@@ -156,12 +156,8 @@ MATLAB-fidelity verification**:
    is downgraded to the inconclusive `inconclusive_no_matlab` status rather
    than a real failure.
 
-A live MATLAB Engine backend (`checker/run_matlab_real.py`) exists, but it is
-only activated when the `matlab.engine` package is actually installed and
-importable. That package is **not bundled with this project**, so the
-packaged/offline build never starts a real MATLAB session and no real MATLAB
-output is ever consulted; in that default configuration every numeric verdict
-is a seeded-mock comparison.
+There is no live MATLAB runtime anywhere in the pipeline: the Checker only
+ever compares against the deterministic seeded mock reference.
 
 ## Accuracy Scoring
 
