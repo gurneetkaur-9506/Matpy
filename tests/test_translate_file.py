@@ -94,7 +94,7 @@ class TestTranslateFile(unittest.TestCase):
             result["sections"]["checker"]["status"], "inconclusive_no_matlab"
         )
         self.assertIn(
-            "MATLAB engine", result["sections"]["checker"]["detail"]
+            "seeded mock", result["sections"]["checker"]["detail"]
         )
 
     def test_default_direction_is_matlab_to_python(self):

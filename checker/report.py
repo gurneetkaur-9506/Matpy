@@ -184,8 +184,8 @@ def _checker_entries(result):
     status = checker.get("status")
     if status == "failed":
         reason = (
-            "The numeric cross-check compared the reference and translated "
-            "outputs and they disagreed beyond the allowed tolerance."
+            "The checker compared the reference and translated outputs and "
+            "they disagreed beyond the allowed tolerance."
         )
     elif status == "review needed":
         reason = (
@@ -195,9 +195,9 @@ def _checker_entries(result):
         )
     elif status == "inconclusive_no_matlab":
         reason = (
-            "The checker could not reach a conclusive verdict because no "
-            "real MATLAB engine is connected; the numeric cross-check ran "
-            "against a mock reference and its result is inconclusive."
+            "The checker could not reach a conclusive verdict because the "
+            "reference is only a seeded mock rather than real MATLAB "
+            "output; the comparison ran but its result is inconclusive."
         )
     else:
         return []
@@ -208,7 +208,7 @@ def _checker_entries(result):
             "issue": status,
             "stage": "checker",
             "attempted": (
-                "Cross-checked the translated output against the reference "
+                "Compared the translated output against the reference "
                 "numerically."
             ),
             "reason": reason,

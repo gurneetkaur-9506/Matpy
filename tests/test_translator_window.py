@@ -348,7 +348,7 @@ class TestReportPanel(unittest.TestCase):
         win = TranslatorWindow(matlab_path=FFT_MATLAB)
         win.translate_button.click()
         text = win.report_pane.toPlainText()
-        self.assertIn("no real MATLAB engine", text)
+        self.assertIn("seeded mock", text)
         self.assertEqual(win.report_button.text(), "Report (1)")
         win.close()
 
@@ -356,7 +356,7 @@ class TestReportPanel(unittest.TestCase):
         win = TranslatorWindow(matlab_path=FFT_MATLAB)
         win.show()
         win.translate_button.click()
-        self.assertIn("no real MATLAB engine", win.report_pane.toPlainText())
+        self.assertIn("seeded mock", win.report_pane.toPlainText())
         reverse_index = win.direction_combo.findData(PYTHON_TO_MATLAB)
         win.direction_combo.setCurrentIndex(reverse_index)
         self.assertEqual(win.report_pane.toPlainText(), "")

@@ -238,7 +238,7 @@ class TestCheckerVerdicts(unittest.TestCase):
         self.assertEqual(entry["issue"], "inconclusive_no_matlab")
         self.assertEqual(entry["stage"], "checker")
         self.assertIsNone(entry["line"])
-        self.assertIn("no real MATLAB engine", entry["reason"])
+        self.assertIn("seeded mock", entry["reason"])
 
     def test_skipped_and_verified_not_reported(self):
         for status in ("skipped", "verified"):

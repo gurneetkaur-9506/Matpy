@@ -11,9 +11,9 @@ is built from four cooperating blocks and is fully offline at runtime.
   builtins, plotting commands, and multi-output assignments.
 - **Specialist library** — focused numpy/scipy idioms for array factor,
   beamforming, steering vectors, AWGN, chirp, convolution, and scan-file I/O.
-- **Numeric verification** — the Checker cross-checks translated output
-  against the original source using seeded inputs; conclusive when a real
-  MATLAB engine is available.
+- **Numeric verification** — the Checker compares translated output against
+  a deterministic seeded reference derived from the original source and the
+  supplied inputs, with no MATLAB runtime required.
 - **Atomic-block safety** — a partially translated block construct is emitted
   as one fully-commented `UNRESOLVED` unit, so raw MATLAB syntax never leaks
   into the Python output.
@@ -25,7 +25,8 @@ is built from four cooperating blocks and is fully offline at runtime.
 - Python 3.8+
 - Runtime dependencies: `tree-sitter`, `tree-sitter-matlab`, `numpy`, `scipy`
 - UI only: `PyQt5`
-- Optional: a MATLAB engine for conclusive numeric checks
+- No MATLAB runtime is required; the Checker validates against a deterministic
+  seeded mock reference.
 
 Install the core dependencies:
 
@@ -136,30 +137,32 @@ function and is never emitted directly by the Rulebook.
 ### Checker
 
 The Checker validates the generated Python before it is accepted. It
-re-parses the output, performs structural and semantic checks, and optionally
-cross-checks numeric behavior against the original MATLAB for supported
-constructs. Findings are reported to the user when a function or line could
-not be resolved.
+re-parses the output, performs structural and semantic checks, and compares
+the numeric behavior of the translated output against a deterministic seeded
+mock reference derived from the original source and the supplied inputs.
+Findings are reported to the user when a function or line could not be
+resolved.
 
 ## Accuracy Scoring
 
-The accuracy score reflects real correctness, not merely how many rules matched:
+The accuracy score reflects observable output consistency, not merely how many rules matched:
 
 1. **Every line must parse.** Each generated statement and the whole generated
    module are validated with `ast.parse`; a line that does not parse counts as
    unresolved (weight 0.0).
-2. **Numeric comparison where possible.** When the Checker runs a numeric
-   cross-check against real output, its verdict drives the score: a
-   `verified` verdict earns every resolved line full weight (1.0), while a
-   `failed` verdict zeroes the resolved lines (0.0), even if rules matched.
-3. **Fallback to provenance weights.** Without a conclusive numeric verdict
-   (no MATLAB engine, no inputs, or an inconclusive result), resolved lines
-   are weighted by source: rulebook lines 1.0, unresolved lines 0.0.
+2. **Reference comparison where possible.** When the Checker compares the
+   translated output against the seeded mock reference, its verdict drives
+   the score: a `verified` verdict earns every resolved line full weight
+   (1.0), while a `failed` verdict zeroes the resolved lines (0.0), even if
+   rules matched.
+3. **Fallback to provenance weights.** Without a numeric verdict (no inputs,
+   or an inconclusive result), resolved lines are weighted by source:
+   rulebook lines 1.0, unresolved lines 0.0.
 
 The score is a percentage in 0-100. Each result reports the weighted
 contribution per source (`breakdown`) and the `method` that produced the
-score, so callers can tell whether it came from a numeric comparison or from
-rulebook matching.
+score, so callers can tell whether it came from the reference comparison or
+from rulebook matching.
 
 ## Companion Modules
 
@@ -201,7 +204,7 @@ On Linux, replace the `DISPLAY` value with your own (e.g. `:0`) and add `-v /tmp
 reader/           Parse MATLAB/Python into a structured IR (tree-sitter)
 rulebook/         Declarative translation rules and the statement translator
 specialist_lib/   Domain specialists (array_factor, beamform, awgn, ...)
-checker/          Validation and numeric cross-checking
+checker/          Validation and reference comparison
 ui/               PyQt5 translator window
 reference_set/    Paired MATLAB/Python validation examples
 sample_matlab/    Example MATLAB inputs

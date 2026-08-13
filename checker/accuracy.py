@@ -1,28 +1,29 @@
 """Accuracy scoring for translated output.
 
-The score is based on real correctness, not merely on rule matching:
+The score is based on observable output consistency, not merely on rule
+matching:
 
     1. Every generated line must be valid Python.  Each statement's output
        is validated with ast.parse (loop headers are parsed together with
        their indented bodies), and the whole generated module is parsed as
        one unit as well.  A line that does not parse counts as unresolved.
 
-    2. Where possible, the score is driven by a numeric comparison against
-       real output rather than by counting matched rules:
+    2. Where possible, the score is driven by the Checker's reference
+       comparison rather than by counting matched rules:
            "verified"  -> the translated output numerically matches the
-                          reference, so every resolved line earns full
-                          weight (1.0);
-           "failed"    -> the numeric comparison found disagreement, so
+                          seeded reference, so every resolved line earns
+                          full weight (1.0);
+           "failed"    -> the reference comparison found disagreement, so
                           every resolved line earns weight 0.0.
-        Without a conclusive numeric verdict the score falls back to
-        provenance weights:
+        Without a numeric verdict the score falls back to provenance
+        weights:
             rulebook-resolved lines ......... 1.0  (fully resolved by rules)
             unresolved lines ................ 0.0  (needs human review)
 
 The score is a single number in 0-100 percent.  The result also reports the
 weighted line contribution of each source (``breakdown``) and the ``method``
-that produced the score, so callers can see whether it came from a numeric
-comparison or from rulebook matching.
+that produced the score, so callers can see whether it came from the
+reference comparison or from rulebook matching.
 """
 
 import ast
@@ -38,8 +39,8 @@ WEIGHTS = {
 }
 
 _METHODS = {
-    "verified": "numeric comparison against real output passed",
-    "failed": "numeric comparison against real output failed",
+    "verified": "translated output matched the seeded reference within tolerance",
+    "failed": "translated output disagreed with the seeded reference",
     "rulebook": "rulebook matching with per-line ast.parse validation",
 }
 
@@ -211,8 +212,8 @@ def accuracy(result):
                     {"source": "unresolved", "lines": unresolved, "weight": 0.0}
                 )
         elif failed:
-            # The numeric comparison against real output disagreed, so even
-            # rules that matched cannot be trusted.
+            # The translated output disagreed with the seeded reference, so
+            # even rules that matched cannot be trusted.
             items.append({"source": "failed", "lines": count, "weight": 0.0})
         else:
             resolved = count - unresolved

@@ -220,7 +220,7 @@ class TestAccuracy(unittest.TestCase):
         self.assertEqual(scored["score"], 0.0)
         self.assertEqual(scored["breakdown"], {"failed": 0.0})
         self.assertEqual(
-            scored["method"], "numeric comparison against real output failed"
+            scored["method"], "translated output disagreed with the seeded reference"
         )
 
     def test_failed_numeric_verdict_on_script(self):
@@ -240,7 +240,7 @@ class TestAccuracy(unittest.TestCase):
         self.assertEqual(scored["score"], 100.0)
         self.assertEqual(scored["breakdown"], {"verified": 3.0})
         self.assertEqual(
-            scored["method"], "numeric comparison against real output passed"
+            scored["method"], "translated output matched the seeded reference within tolerance"
         )
 
     def test_module_that_does_not_parse_downgrades_every_line(self):

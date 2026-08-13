@@ -17,11 +17,13 @@ def _parse(source, direction):
 
 
 def matlab_engine_available():
-    """Return True when a real MATLAB engine is importable.
+    """Return True when a matlab.engine module is importable.
 
-    The numeric cross-check is only conclusive when a real MATLAB engine is
-    available; otherwise the reference comes from a mock stub and the
-    checker's verdict is inconclusive.
+    This only probes importability; no code path connects to or runs a live
+    MATLAB engine.  The Checker always compares the translated output
+    against the seeded mock reference, and this probe decides whether a
+    "failed" comparison is kept as "failed" or reported as the inconclusive
+    "inconclusive_no_matlab" verdict.
     """
     try:
         import matlab.engine  # noqa: F401
@@ -225,14 +227,14 @@ def translate_source(
         if matlab_engine_available():
             result["sections"]["checker"] = {
                 "status": "skipped",
-                "detail": "no inputs provided for numeric cross-check",
+                "detail": "no inputs provided for the reference comparison",
             }
         else:
             result["sections"]["checker"] = {
                 "status": "inconclusive_no_matlab",
                 "detail": (
-                    "no inputs provided and no real MATLAB engine is "
-                    "connected; the numeric cross-check cannot be conclusive"
+                    "no inputs provided for the reference comparison, so "
+                    "no numeric verdict was reached"
                 ),
             }
         return result
@@ -260,9 +262,8 @@ def translate_source(
                     "status": "inconclusive_no_matlab",
                     "detail": (
                         "the translated output disagrees with the reference, "
-                        "but the reference is only a mock because no real "
-                        "MATLAB engine is connected; the verdict is "
-                        "inconclusive"
+                        "but the reference is only a seeded mock rather than "
+                        "real MATLAB output; the verdict is inconclusive"
                     ),
                 }
             else:
