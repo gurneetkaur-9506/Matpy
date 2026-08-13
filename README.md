@@ -11,9 +11,9 @@ is built from four cooperating blocks and is fully offline at runtime.
   builtins, plotting commands, and multi-output assignments.
 - **Specialist library** — focused numpy/scipy idioms for array factor,
   beamforming, steering vectors, AWGN, chirp, convolution, and scan-file I/O.
-- **Numeric verification** — the Checker compares translated output against
-  a deterministic seeded reference derived from the original source and the
-  supplied inputs, with no MATLAB runtime required.
+- **Numeric verification** — the Checker checks the translated output for
+  internal consistency against a deterministic seeded reference derived from
+  the original source and the supplied inputs, with no MATLAB runtime required.
 - **Atomic-block safety** — a partially translated block construct is emitted
   as one fully-commented `UNRESOLVED` unit, so raw MATLAB syntax never leaks
   into the Python output.
@@ -138,27 +138,30 @@ function and is never emitted directly by the Rulebook.
 
 The Checker validates the generated Python before it is accepted. It
 re-parses the output, performs structural and semantic checks, and compares
-the numeric behavior of the translated output against a reference derived
-from the original source and the supplied inputs. Findings are reported to
-the user when a function or line could not be resolved.
+the numeric behavior of the translated output against a deterministic seeded
+mock reference for internal consistency. Findings are reported to the user
+when a function or line could not be resolved.
 
-The reference comparison is two-tiered:
+The numeric cross-check is an **internal-consistency comparison, not a
+MATLAB-fidelity verification**:
 
-1. **Real MATLAB verification.** When the MATLAB Engine for Python
-   (`matlab.engine`) is installed, the Checker runs the original `.m` source
-   through a live MATLAB Engine session, converts the returned arrays back to
-   numpy, runs the translated Python, and compares the two with
-   `numpy.allclose`. MATLAB vectors are stored as 1xN / Nx1 matrices, so
-   singleton dimensions are squeezed out before the comparison to match the
-   1-D numpy result. The engine session is started lazily and always quit
-   when verification finishes. A `failed` verdict in this mode is a genuine
-   numeric mismatch.
-2. **Seeded mock fallback.** Without MATLAB, the Checker falls back to a
-   deterministic seeded mock reference derived from the original source and
-   inputs (`run_matlab_mock`). The mock produces random-but-reproducible
-   values, so it is **not proof of MATLAB equivalence**: a `failed`
-   comparison against the mock is reported as the inconclusive
-   `inconclusive_no_matlab` verdict rather than a real failure.
+1. `run_matlab_mock` derives a reference array for each output from the
+   original source and the supplied inputs, seeded deterministically by a
+   hash of the source and output name. The translated Python runs with the
+   same inputs and the two are compared with `numpy.allclose`. Because the
+   reference values are fabricated, a `verified` verdict only shows the
+   translated output is internally consistent — it is never proof of
+   MATLAB equivalence.
+2. When the comparison cannot agree within tolerance, the `failed` verdict
+   is downgraded to the inconclusive `inconclusive_no_matlab` status rather
+   than a real failure.
+
+A live MATLAB Engine backend (`checker/run_matlab_real.py`) exists, but it is
+only activated when the `matlab.engine` package is actually installed and
+importable. That package is **not bundled with this project**, so the
+packaged/offline build never starts a real MATLAB session and no real MATLAB
+output is ever consulted; in that default configuration every numeric verdict
+is a seeded-mock comparison.
 
 ## Accuracy Scoring
 
@@ -168,12 +171,12 @@ The accuracy score reflects observable output consistency, not merely how many r
    module are validated with `ast.parse`; a line that does not parse counts as
    unresolved (weight 0.0).
 2. **Reference comparison where possible.** When the Checker compares the
-   translated output against the reference (a live MATLAB Engine when
-   available, otherwise the seeded mock), its verdict drives the score: a
-   `verified` verdict earns every resolved line full weight (1.0), while a
-   `failed` verdict zeroes the resolved lines (0.0), even if rules matched.
-   The mock-only `inconclusive_no_matlab` verdict is not treated as a real
-   failure; it falls through to the provenance weights below.
+   translated output against the deterministic seeded mock reference, its
+   verdict drives the score: a `verified` verdict earns every resolved line
+   full weight (1.0), while a `failed` verdict zeroes the resolved lines
+   (0.0), even if rules matched. The mock-only `inconclusive_no_matlab`
+   verdict is not treated as a real failure; it falls through to the
+   provenance weights below.
 3. **Fallback to provenance weights.** Without a numeric verdict (no inputs,
    or an inconclusive result), resolved lines are weighted by source:
    rulebook lines 1.0, unresolved lines 0.0.

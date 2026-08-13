@@ -368,7 +368,7 @@ def test_function_call_without_name_reason_wording():
         ),
         (
             "inconclusive_no_matlab",
-            "The checker could not reach a conclusive verdict because the reference is only a seeded mock rather than real MATLAB output; the comparison ran but its result is inconclusive.",
+            "The checker could not reach a conclusive verdict. Its numeric check is an internal-consistency comparison against a deterministic seeded mock reference, not MATLAB-fidelity verification; with no live MATLAB Engine the verdict stays inconclusive.",
         ),
     ],
 )

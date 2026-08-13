@@ -27,7 +27,9 @@ def _match_inputs(matlab_args, python_params, inputs):
 
 
 def verify(matlab_file, python_file, inputs=None, tolerance=1e-8, use_real_matlab=None):
-    """Verify a translated Python module against its original MATLAB source.
+    """Compare a translated Python module against the reference output for its
+    original MATLAB source (a live MATLAB Engine when available, otherwise a
+    deterministic seeded mock).
 
     Args:
         matlab_file: Path to the original MATLAB source.

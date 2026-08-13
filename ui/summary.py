@@ -41,10 +41,11 @@ def status_counts(result):
 
 
 def status_line(result):
-    auto, review, verified = status_counts(result)
+    auto, review, consistent = status_counts(result)
     return (
-        "%d lines translated automatically, %d need your review, %d verified yet"
-        % (auto, review, verified)
+        "%d lines translated automatically, %d need review, %d consistent "
+        "with the seeded reference"
+        % (auto, review, consistent)
     )
 
 
@@ -140,7 +141,7 @@ def summarize_translation(paths=None, beamform_inputs=None):
 
 
 def print_summary(rows):
-    header = "%-20s %12s  %s" % ("filename", "rulebook%", "verification")
+    header = "%-20s %12s  %s" % ("filename", "rulebook%", "numeric check")
     print(header)
     print("-" * len(header))
     for row in rows:
