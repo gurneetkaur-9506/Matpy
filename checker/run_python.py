@@ -52,6 +52,28 @@ def _bind_args(func, inputs):
     return kwargs, missing
 
 
+def python_param_names(file_path):
+    """Return the parameter names of the translated function.
+
+    Used by the Checker to map MATLAB argument names onto Python parameter
+    names positionally (MATLAB keyword renames such as ``lambda`` -> ``lamb``
+    mean a single input dict cannot be keyed for both sides).
+    """
+    try:
+        module = _load_module(file_path)
+    except Exception:
+        return []
+    func = _find_function(module, file_path)
+    if func is None:
+        return []
+    return [
+        pname
+        for pname, param in inspect.signature(func).parameters.items()
+        if param.kind
+        not in (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD)
+    ]
+
+
 def _result(success, file_path, func_name, inputs, outputs, notes):
     return {
         "success": success,

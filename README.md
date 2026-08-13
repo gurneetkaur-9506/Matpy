@@ -138,10 +138,27 @@ function and is never emitted directly by the Rulebook.
 
 The Checker validates the generated Python before it is accepted. It
 re-parses the output, performs structural and semantic checks, and compares
-the numeric behavior of the translated output against a deterministic seeded
-mock reference derived from the original source and the supplied inputs.
-Findings are reported to the user when a function or line could not be
-resolved.
+the numeric behavior of the translated output against a reference derived
+from the original source and the supplied inputs. Findings are reported to
+the user when a function or line could not be resolved.
+
+The reference comparison is two-tiered:
+
+1. **Real MATLAB verification.** When the MATLAB Engine for Python
+   (`matlab.engine`) is installed, the Checker runs the original `.m` source
+   through a live MATLAB Engine session, converts the returned arrays back to
+   numpy, runs the translated Python, and compares the two with
+   `numpy.allclose`. MATLAB vectors are stored as 1xN / Nx1 matrices, so
+   singleton dimensions are squeezed out before the comparison to match the
+   1-D numpy result. The engine session is started lazily and always quit
+   when verification finishes. A `failed` verdict in this mode is a genuine
+   numeric mismatch.
+2. **Seeded mock fallback.** Without MATLAB, the Checker falls back to a
+   deterministic seeded mock reference derived from the original source and
+   inputs (`run_matlab_mock`). The mock produces random-but-reproducible
+   values, so it is **not proof of MATLAB equivalence**: a `failed`
+   comparison against the mock is reported as the inconclusive
+   `inconclusive_no_matlab` verdict rather than a real failure.
 
 ## Accuracy Scoring
 
@@ -151,10 +168,12 @@ The accuracy score reflects observable output consistency, not merely how many r
    module are validated with `ast.parse`; a line that does not parse counts as
    unresolved (weight 0.0).
 2. **Reference comparison where possible.** When the Checker compares the
-   translated output against the seeded mock reference, its verdict drives
-   the score: a `verified` verdict earns every resolved line full weight
-   (1.0), while a `failed` verdict zeroes the resolved lines (0.0), even if
-   rules matched.
+   translated output against the reference (a live MATLAB Engine when
+   available, otherwise the seeded mock), its verdict drives the score: a
+   `verified` verdict earns every resolved line full weight (1.0), while a
+   `failed` verdict zeroes the resolved lines (0.0), even if rules matched.
+   The mock-only `inconclusive_no_matlab` verdict is not treated as a real
+   failure; it falls through to the provenance weights below.
 3. **Fallback to provenance weights.** Without a numeric verdict (no inputs,
    or an inconclusive result), resolved lines are weighted by source:
    rulebook lines 1.0, unresolved lines 0.0.

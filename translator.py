@@ -4,6 +4,7 @@ import os
 import tempfile
 
 from checker import verify
+from checker.run_matlab_real import matlab_engine_available as _engine_probe
 from reader import (
     MATLAB_TO_PYTHON,
     PYTHON_TO_MATLAB,
@@ -17,19 +18,16 @@ def _parse(source, direction):
 
 
 def matlab_engine_available():
-    """Return True when a matlab.engine module is importable.
+    """Return True when a live MATLAB Engine session can be started.
 
-    This only probes importability; no code path connects to or runs a live
-    MATLAB engine.  The Checker always compares the translated output
-    against the seeded mock reference, and this probe decides whether a
-    "failed" comparison is kept as "failed" or reported as the inconclusive
-    "inconclusive_no_matlab" verdict.
+    The probe imports ``matlab.engine`` lazily and only reports True on
+    machines where the MATLAB Engine for Python is installed.  When True the
+    Checker runs the original MATLAB source through a live engine and a
+    "failed" comparison is a genuine mismatch.  When False the Checker falls
+    back to the seeded mock reference and any "failed" comparison is
+    downgraded to the inconclusive "inconclusive_no_matlab" verdict.
     """
-    try:
-        import matlab.engine  # noqa: F401
-    except ImportError:
-        return False
-    return True
+    return _engine_probe()
 
 
 def _emit_block(statements, lines, indent="", problems=None):
