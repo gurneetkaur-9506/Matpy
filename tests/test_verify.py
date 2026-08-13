@@ -40,6 +40,19 @@ class TestVerify(unittest.TestCase):
         verdict = verify(matlab, python, {"a": [2.0, 3.0], "b": [4.0, 5.0]})
         self.assertEqual(verdict, "failed")
 
+    def test_genuinely_missing_input_still_review_needed(self):
+        """A parameter that is missing from the inputs on both sides must
+        still be reported as "review needed", not coerced to a verdict."""
+        matlab = self._write("mul.m", "function y = mul(a, b)\nend\n")
+        python = self._write(
+            "mul.py",
+            "import numpy as np\n"
+            "def mul(a, b):\n"
+            "    return np.asarray(a) * np.asarray(b)\n",
+        )
+        verdict = verify(matlab, python, {"a": [2.0, 3.0]})
+        self.assertEqual(verdict, "review needed")
+
     @mock.patch("checker.verify.run_matlab_mock")
     @mock.patch("checker.verify.run_python")
     def test_verified_verdict_propagates(self, mock_python, mock_matlab):

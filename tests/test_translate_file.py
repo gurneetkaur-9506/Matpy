@@ -45,7 +45,7 @@ class TestTranslateFile(unittest.TestCase):
             inputs={
                 "N": 3,
                 "d": 0.5,
-                "lamb": 1.0,
+                "lambda_": 1.0,
                 "theta": np.linspace(0, np.pi, 3),
                 "theta0": 0.0,
             },
@@ -64,7 +64,7 @@ class TestTranslateFile(unittest.TestCase):
             inputs={
                 "N": 3,
                 "d": 0.5,
-                "lamb": 1.0,
+                "lambda_": 1.0,
                 "theta": np.linspace(0, np.pi, 3),
                 "theta0": 0.0,
             },
